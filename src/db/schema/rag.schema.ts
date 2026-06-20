@@ -1,7 +1,10 @@
 /**
- * RAG Schema — Documents & Chunks with pgvector embeddings
+ * RAG Schema — Documents & Chunks with embeddings
+ *
+ * Embeddings stored as JSON arrays. When pgvector is available in production,
+ * migrate these columns to `vector(1536)` type.
  */
-import { pgTable, uuid, text, timestamp, integer, jsonb, vector, index, pgEnum, bigint } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, jsonb, index, pgEnum, bigint } from 'drizzle-orm/pg-core';
 import { users } from './auth.schema';
 
 export const docStatus = pgEnum('doc_status', ['pending', 'processing', 'ready', 'failed']);
@@ -28,10 +31,11 @@ export const documentChunks = pgTable('document_chunks', {
   chunkIndex: integer('chunk_index').notNull(),
   content: text('content').notNull(),
   tokens: integer('tokens').default(0).notNull(),
-  embedding: vector('embedding', { dimensions: 1536 }),
+  // JSON array storage for embeddings (fallback when pgvector not available)
+  embedding: jsonb('embedding'),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   docIdx: index('chunks_doc_idx').on(t.documentId),
-  embeddingIdx: index('chunks_embedding_idx').using('ivfflat', t.embedding.op('vector_cosine_ops')),
+  chunkIdx: index('chunks_chunk_idx').on(t.chunkIndex),
 }));

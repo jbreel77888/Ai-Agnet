@@ -132,6 +132,14 @@ const PHASES = [
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('overview');
+  const [health, setHealth] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('/api/health')
+      .then(r => r.json())
+      .then(data => setHealth(data.data))
+      .catch(() => {});
+  }, []);
 
   const readyCount = MODULES.filter(m => m.status === 'ready').length;
   const scaffoldCount = MODULES.filter(m => m.status === 'scaffold').length;
@@ -163,6 +171,7 @@ export default function Home() {
 
       <main className="container mx-auto px-4 py-8 max-w-7xl">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          {/* Tabs */}
           <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 lg:grid-cols-5 gap-1">
             <TabsTrigger value="overview" className="gap-1.5 text-xs md:text-sm">
               <Layers className="w-4 h-4" /> نظرة عامة
@@ -180,6 +189,39 @@ export default function Home() {
               <BookOpen className="w-4 h-4" /> التوثيق
             </TabsTrigger>
           </TabsList>
+
+          {/* Live System Status Banner (shown if health is loaded) */}
+          {health && (
+            <Card className="border-emerald-500/30 bg-emerald-500/5">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-3 h-3 rounded-full ${health.status === 'healthy' ? 'bg-emerald-500 animate-pulse' : health.status === 'degraded' ? 'bg-amber-500' : 'bg-rose-500'}`} />
+                    <div>
+                      <p className="font-semibold text-sm">
+                        حالة النظام: {health.status === 'healthy' ? 'سليم ✓' : health.status === 'degraded' ? 'يعمل (مع تحذيرات)' : 'متوقف'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        PostgreSQL 18: {health.checks?.find((c: any) => c.name === 'database')?.status === 'healthy'
+                          ? `${health.checks.find((c: any) => c.name === 'database')?.details?.tables} جدول جاهز`
+                          : 'متوقف'}
+                        {' · '}
+                        Encryption: {health.checks?.find((c: any) => c.name === 'encryption')?.status === 'healthy' ? 'مُفعّل' : 'غير مُفعّل'}
+                        {' · '}
+                        JWT: {health.checks?.find((c: any) => c.name === 'jwt')?.status === 'healthy' ? 'مُفعّل' : 'غير مُفعّل'}
+                        {' · '}
+                        Redis: {health.checks?.find((c: any) => c.name === 'redis')?.details?.mode === 'memory-fallback' ? 'Memory Fallback' : 'متصل'}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="gap-1 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
+                    <Activity className="w-3 h-3" />
+                    {Math.floor(health.uptime)}s uptime
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* ===== OVERVIEW ===== */}
           <TabsContent value="overview" className="space-y-6">
@@ -465,129 +507,109 @@ export default function Home() {
 
           {/* ===== MANUAL SETUP ===== */}
           <TabsContent value="setup" className="space-y-4">
-            <Card className="border-amber-500/30 bg-amber-500/5">
+            <Card className="border-emerald-500/30 bg-emerald-500/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle2 className="w-5 h-5" />
+                  ✅ تم الإعداد تلقائياً في هذه البيئة
+                </CardTitle>
+                <CardDescription>
+                  تم تثبيت وتشغيل PostgreSQL 18 + توليد مفاتيح الأمان + تطبيق migrations — كل ذلك بدون أي إجراء منك.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-emerald-500/30 p-4 bg-background">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Database className="w-4 h-4 text-emerald-500" />
+                      <h4 className="font-semibold text-sm">PostgreSQL 18.4 (Embedded)</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      مثبّت محلياً عبر <code className="text-[10px] bg-muted px-1 rounded">embedded-postgres</code> npm package
+                    </p>
+                    <pre className="text-[10px] font-mono bg-slate-950 text-emerald-400 p-2 rounded">
+{`Port: 5433
+DB: agent_platform
+User: postgres
+Tables: 35 (auto-migrated)`}
+                    </pre>
+                  </div>
+
+                  <div className="rounded-lg border border-emerald-500/30 p-4 bg-background">
+                    <div className="flex items-center gap-2 mb-2">
+                      <KeyRound className="w-4 h-4 text-emerald-500" />
+                      <h4 className="font-semibold text-sm">مفاتيح الأمان</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      تم توليدها بـ <code className="text-[10px] bg-muted px-1 rounded">openssl rand</code>
+                    </p>
+                    <pre className="text-[10px] font-mono bg-slate-950 text-emerald-400 p-2 rounded">
+{`ENCRYPTION_KEY: ✓ (AES-256)
+JWT_SECRET: ✓ (64 hex chars)
+JWT TTL: 15min / 7 days`}
+                    </pre>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-500/30 p-4 bg-background">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Activity className="w-4 h-4 text-amber-500" />
+                      <h4 className="font-semibold text-sm">Redis (Memory Fallback)</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      يعمل بـ in-memory fallback. للإنتاج، أضف Redis URL.
+                    </p>
+                    <pre className="text-[10px] font-mono bg-slate-950 text-amber-400 p-2 rounded">
+{`Mode: in-memory (dev)
+For production:
+  REDIS_URL=redis://...`}
+                    </pre>
+                  </div>
+
+                  <div className="rounded-lg border border-blue-500/30 p-4 bg-background">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Database className="w-4 h-4 text-blue-500" />
+                      <h4 className="font-semibold text-sm">pgvector</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      غير متوفر في الـ embedded build. يستخدم JSON storage بدلاً منه.
+                    </p>
+                    <pre className="text-[10px] font-mono bg-slate-950 text-blue-400 p-2 rounded">
+{`Embeddings: JSON arrays
+Cosine similarity: app-level
+For production (Railway):
+  CREATE EXTENSION vector;`}
+                    </pre>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-amber-500/30">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg text-amber-700 dark:text-amber-400">
                   <AlertTriangle className="w-5 h-5" />
-                  إجراءات يدوية مطلوبة منك
+                  إجراءات إضافية للإنتاج (اختياري)
                 </CardTitle>
                 <CardDescription>
-                  هذه المنصة تحتاج إعداداً يدوياً قبل التشغيل الكامل. نفّذ الخطوات التالية بالترتيب.
+                  هذه إجراءات تحتاجها فقط عند النشر للإنتاج على Railway أو أي منصة أخرى.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-lg border border-amber-500/30 p-4 bg-background">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                    <KeyRound className="w-4 h-4" />
-                    1. متغيرات البيئة المطلوبة
-                  </h4>
-                  <div className="space-y-2">
-                    {REQUIRED_ENV_VARS.map((env) => (
-                      <div key={env.name} className="flex items-center justify-between p-2 rounded border bg-slate-50 dark:bg-slate-900">
-                        <div className="flex-1">
-                          <code className="text-sm font-mono">{env.name}</code>
-                          <p className="text-xs text-muted-foreground mt-0.5">{env.description}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {env.hasFallback && (
-                            <Badge variant="outline" className="text-amber-600 border-amber-500/30 text-[10px]">
-                              dev fallback
-                            </Badge>
-                          )}
-                          {env.required ? (
-                            <Badge variant="outline" className="text-rose-600 border-rose-500/30 text-[10px]">
-                              مطلوب
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 text-[10px]">
-                              اختياري
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+              <CardContent className="space-y-3">
+                <div className="rounded-lg border p-3">
+                  <p className="text-sm font-medium mb-1">1. إضافة Redis حقيقي (للإنتاج)</p>
+                  <p className="text-xs text-muted-foreground">في Railway، أنشئ Redis service وانسخ الـ URL إلى <code className="bg-muted px-1 rounded text-[10px]">REDIS_URL</code></p>
                 </div>
-
-                <div className="rounded-lg border border-blue-500/30 p-4 bg-blue-500/5">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                    <Database className="w-4 h-4" />
-                    2. إعداد PostgreSQL + pgvector
-                  </h4>
-                  <p className="text-sm mb-3 text-muted-foreground">
-                    تحتاج قاعدة بيانات PostgreSQL 15+ مع امتدادات pgvector و uuid-ossp. على Railway:
-                  </p>
-                  <pre className="text-xs font-mono bg-slate-950 text-slate-100 p-3 rounded">
-{`# 1. أنشئ PostgreSQL على Railway
-# 2. افتح console ونفّذ:
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "vector";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-
-# 3. ضع DATABASE_URL في متغيرات البيئة
-# 4. شغّل migrations:
-bun run db:generate
-bun run db:migrate`}
-                  </pre>
+                <div className="rounded-lg border p-3">
+                  <p className="text-sm font-medium mb-1">2. تفعيل pgvector (للإنتاج)</p>
+                  <p className="text-xs text-muted-foreground">في Railway PostgreSQL console: <code className="bg-muted px-1 rounded text-[10px]">CREATE EXTENSION vector;</code> ثم migration</p>
                 </div>
-
-                <div className="rounded-lg border border-emerald-500/30 p-4 bg-emerald-500/5">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                    <Activity className="w-4 h-4" />
-                    3. إعداد Redis
-                  </h4>
-                  <p className="text-sm mb-3 text-muted-foreground">
-                    Redis مطلوب لـ BullMQ والذاكرة قصيرة المدى. على Railway:
-                  </p>
-                  <pre className="text-xs font-mono bg-slate-950 text-slate-100 p-3 rounded">
-{`# 1. أنشئ Redis على Railway
-# 2. ضع REDIS_URL في متغيرات البيئة
-# 3. (محلياً للتجربة فقط — يوجد fallback in-memory)`}
-                  </pre>
+                <div className="rounded-lg border p-3">
+                  <p className="text-sm font-medium mb-1">3. إضافة API keys للمزودين</p>
+                  <p className="text-xs text-muted-foreground">بعد إقلاع النظام، أضف OpenAI/Anthropic/Gemini API keys من لوحة التحكم → Providers</p>
                 </div>
-
-                <div className="rounded-lg border border-purple-500/30 p-4 bg-purple-500/5">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                    <Shield className="w-4 h-4" />
-                    4. توليد مفاتيح الأمان
-                  </h4>
-                  <pre className="text-xs font-mono bg-slate-950 text-slate-100 p-3 rounded">
-{`# ENCRYPTION_KEY (لتشفير API keys في DB)
-openssl rand -base64 32
-
-# JWT_SECRET (لـ JWT tokens)
-openssl rand -hex 32
-
-# ضع الناتجين في متغيرات البيئة`}
-                  </pre>
-                </div>
-
-                <div className="rounded-lg border border-rose-500/30 p-4 bg-rose-500/5">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                    <Cpu className="w-4 h-4" />
-                    5. إضافة المزودين (Providers)
-                  </h4>
-                  <p className="text-sm text-muted-foreground">
-                    بعد إقلاع النظام، أضف المزودين من لوحة التحكم → Providers → Add Provider.
-                    كل مزود يحتاج: name, slug, type, base_url, api_key.
-                    النماذج تُجلب تلقائياً عبر زر "Refresh Models".
-                  </p>
-                </div>
-
-                <div className="rounded-lg border border-slate-500/30 p-4 bg-slate-500/5">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                    <Server className="w-4 h-4" />
-                    6. النشر على Railway
-                  </h4>
-                  <pre className="text-xs font-mono bg-slate-950 text-slate-100 p-3 rounded">
-{`# railway.json سيُضاف في المرحلة 7
-# 1. اربط GitHub repo بـ Railway
-# 2. أضف PostgreSQL + Redis services
-# 3. أضف متغيرات البيئة
-# 4. Build command: bun run build
-# 5. Start command: bun run start
-# 6. النظام سيُنشئ الجداول تلقائياً على أول تشغيل`}
-                  </pre>
+                <div className="rounded-lg border p-3">
+                  <p className="text-sm font-medium mb-1">4. ربط GitHub بـ Railway للنشر</p>
+                  <p className="text-xs text-muted-foreground">ارفع المشروع لـ GitHub، اربطه بـ Railway، أضف متغيرات البيئة من <code className="bg-muted px-1 rounded text-[10px]">.env</code></p>
                 </div>
               </CardContent>
             </Card>

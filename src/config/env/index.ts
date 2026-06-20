@@ -11,11 +11,20 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
 
   // Database
-  DATABASE_URL: z.string().url().optional(),
+  DATABASE_URL: z.string().optional(),
   DATABASE_SSL: z.string().optional(),
 
-  // Redis
-  REDIS_URL: z.string().url().optional(),
+  // Redis (optional - empty string allowed)
+  REDIS_URL: z.string().optional().or(z.literal('')),
+
+  // Embedded PostgreSQL
+  PG_PORT: z.coerce.number().default(5433),
+  PG_USER: z.string().default('postgres'),
+  PG_PASSWORD: z.string().default('postgres'),
+  PG_DB_NAME: z.string().default('agent_platform'),
+  PG_DATA_DIR: z.string().optional(),
+  PG_AUTO_START: z.string().default('true'),
+  PG_RESET_ON_START: z.string().default('false'),
 
   // Encryption
   ENCRYPTION_KEY: z.string().optional(),
@@ -65,7 +74,7 @@ const envSchema = z.object({
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-});
+}).passthrough(); // Allow extra env vars without failing
 
 export type Env = z.infer<typeof envSchema>;
 
@@ -83,8 +92,8 @@ export function loadEnv(): Env {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('Invalid environment configuration');
     }
-    // In dev, use whatever is set with defaults
-    cachedEnv = envSchema.parse(process.env) ?? ({} as Env);
+    // In dev, return undefined to signal issue (callers should handle)
+    cachedEnv = {} as Env;
   } else {
     cachedEnv = result.data;
   }
