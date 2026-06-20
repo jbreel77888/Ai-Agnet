@@ -160,11 +160,26 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <a
+              href="https://agent-platform-production-de14.up.railway.app/api/health"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-3 py-1.5 rounded-md border bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20 transition-colors"
+            >
+              Railway ●
+            </a>
+            <a
+              href="https://ai-agnet.vercel.app/api/health"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-3 py-1.5 rounded-md border bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/20 transition-colors"
+            >
+              Vercel ▲
+            </a>
             <Badge variant="outline" className="gap-1">
               <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-              Phase 1 Active
+              Live
             </Badge>
-            <Badge variant="secondary">Production Ready Architecture</Badge>
           </div>
         </div>
       </header>
