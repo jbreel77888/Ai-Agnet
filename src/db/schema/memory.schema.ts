@@ -1,9 +1,14 @@
 /**
- * Memory Schema — uses pgvector for embeddings
+ * Memory Schema — embeddings storage
  *
- * NOTE: Requires `CREATE EXTENSION IF NOT EXISTS vector;` on the database.
+ * NOTE: Uses JSON storage for embeddings as fallback when pgvector extension
+ * is not available. When deploying to PostgreSQL with pgvector installed,
+ * run migration to convert these columns to `vector(1536)` type.
+ *
+ * Vector operations are done in application code (cosine similarity).
+ * See src/vector/store/cosine.ts for the implementation.
  */
-import { pgTable, uuid, text, timestamp, integer, jsonb, numeric, vector, index, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, jsonb, numeric, index, pgEnum } from 'drizzle-orm/pg-core';
 
 export const factType = pgEnum('fact_type', ['preference', 'entity', 'event', 'summary', 'custom']);
 export const messageRole = pgEnum('message_role', ['user', 'assistant', 'system', 'tool', 'error']);
@@ -20,7 +25,7 @@ export const memoryShort = pgTable('memory_short', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
-// Long-term memory with embedding
+// Long-term memory with embedding (stored as JSON array of numbers)
 export const memoryLong = pgTable('memory_long', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id'),
@@ -29,16 +34,18 @@ export const memoryLong = pgTable('memory_long', {
   fact: text('fact').notNull(),
   factType: factType('fact_type').default('custom').notNull(),
   importance: numeric('importance', { precision: 3, scale: 2 }).default('0.5').notNull(),
-  embedding: vector('embedding', { dimensions: 1536 }),
+  // Embedding stored as JSON array (1536 floats). When pgvector is available,
+  // this can be migrated to a `vector(1536)` column.
+  embedding: jsonb('embedding'),
+  embeddingModel: text('embedding_model'),
   metadata: jsonb('metadata'),
   lastAccessedAt: timestamp('last_accessed_at', { withTimezone: true }),
   accessCount: integer('access_count').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
-  // ivfflat index will be added via SQL migration
-  embeddingIdx: index('memory_long_embedding_idx').using('ivfflat', t.embedding.op('vector_cosine_ops')),
   userAccessedIdx: index('memory_long_user_accessed_idx').on(t.userId, t.lastAccessedAt),
+  factTypeIdx: index('memory_long_fact_type_idx').on(t.factType),
 }));
 
 // Extracted entities
@@ -49,7 +56,7 @@ export const memoryEntities = pgTable('memory_entities', {
   entityValue: text('entity_value').notNull(),
   canonical: text('canonical').notNull(),
   aliases: text('aliases').array(),
-  embedding: vector('embedding', { dimensions: 1536 }),
+  embedding: jsonb('embedding'),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -63,6 +70,6 @@ export const memorySummaries = pgTable('memory_summaries', {
   summary: text('summary').notNull(),
   tokensSaved: integer('tokens_saved').default(0).notNull(),
   coveredMessageIds: uuid('covered_message_ids').array(),
-  embedding: vector('embedding', { dimensions: 1536 }),
+  embedding: jsonb('embedding'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });

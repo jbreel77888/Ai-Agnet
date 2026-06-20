@@ -9,21 +9,26 @@ export async function GET() {
   const env = getEnv();
   const checks: Array<{ name: string; status: 'healthy' | 'degraded' | 'down'; details?: Record<string, unknown> }> = [];
 
-  // Database
+  // Database — test direct connection
   let dbStatus: 'healthy' | 'degraded' | 'down' = 'down';
   try {
     if (process.env.DATABASE_URL) {
-      const { db } = await import('../../../db/client');
-      const { sql } = await import('drizzle-orm');
-      await db.execute(sql`SELECT 1`);
+      const pg = require('pg');
+      const client = new pg.Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 3000 });
+      await client.connect();
+      const r = await client.query('SELECT count(*) FROM pg_tables WHERE schemaname = $1', ['public']);
+      const tableCount = parseInt(r.rows[0].count, 10);
+      await client.end();
       dbStatus = 'healthy';
+      checks.push({ name: 'database', status: dbStatus, details: { configured: true, tables: tableCount } });
     } else {
       dbStatus = 'degraded';
+      checks.push({ name: 'database', status: dbStatus, details: { configured: false } });
     }
-  } catch (err) {
+  } catch (err: any) {
     dbStatus = 'down';
+    checks.push({ name: 'database', status: dbStatus, details: { configured: !!process.env.DATABASE_URL, error: err.message?.substring(0, 100) } });
   }
-  checks.push({ name: 'database', status: dbStatus, details: { configured: !!process.env.DATABASE_URL } });
 
   // Redis
   let redisStatus: 'healthy' | 'degraded' | 'down' = 'down';
@@ -34,12 +39,12 @@ export async function GET() {
       const pong = await redis.ping();
       redisStatus = pong === 'PONG' ? 'healthy' : 'degraded';
     } else {
-      redisStatus = 'degraded';
+      redisStatus = 'degraded'; // Using in-memory fallback
     }
   } catch {
     redisStatus = 'down';
   }
-  checks.push({ name: 'redis', status: redisStatus, details: { configured: !!process.env.REDIS_URL } });
+  checks.push({ name: 'redis', status: redisStatus, details: { configured: !!process.env.REDIS_URL, mode: process.env.REDIS_URL ? 'real' : 'memory-fallback' } });
 
   // Encryption
   const encStatus = process.env.ENCRYPTION_KEY ? 'healthy' : 'degraded';
@@ -62,7 +67,7 @@ export async function GET() {
     success: true,
     data: {
       status: overallStatus,
-      service: env.SERVICE_NAME,
+      service: env.SERVICE_NAME || 'agent-platform',
       version: '0.1.0',
       phase: 1,
       uptime,

@@ -5,67 +5,79 @@
  * Run `bun run db:generate` to generate migrations.
  */
 
-import { users, roles, permissions, rolePermissions, userRoles, refreshTokens, auditLogs } from './auth.schema';
-import { providers, models } from './providers.schema';
-import { agents, agentTools, agentModels } from './agents.schema';
-import { tools, toolPermissions } from './tools.schema';
-import { mcpServers, mcpTools } from './mcp.schema';
+import { users, roles, permissions, rolePermissions, userRoles, refreshTokens, auditLogs, userStatus, providerHealthStatus } from './auth.schema';
+import { providers, models, providerType, entityStatus, modelStatus } from './providers.schema';
+import { agents, agentTools, agentModels, agentType } from './agents.schema';
+import { tools, toolPermissions, toolCategory, toolSource } from './tools.schema';
+import { mcpServers, mcpTools, mcpTransport, mcpAuthType } from './mcp.schema';
 import {
   memoryShort,
   memoryLong,
   memoryEntities,
   memorySummaries,
+  factType,
+  messageRole,
 } from './memory.schema';
 import {
   agentSessions,
   messages,
   artifacts,
   toolCalls,
+  sessionStatus,
+  messageRole as msgRole,
+  artifactType,
+  toolCallStatus,
 } from './sessions.schema';
 import {
   workflows,
   workflowRuns,
   workflowStepRuns,
+  workflowStatus,
+  stepType,
+  stepStatus,
+  triggerType,
 } from './workflows.schema';
-import { documents, documentChunks } from './rag.schema';
-import { jobRecords, jobLogs } from './jobs.schema';
-import { costRecords, costBudgets } from './cost.schema';
-import { traces, metrics } from './observability.schema';
-import { storageObjects } from './storage.schema';
-import { integrations } from './integrations.schema';
+import { documents, documentChunks, docStatus, docSource } from './rag.schema';
+import { jobRecords, jobLogs, jobStatus } from './jobs.schema';
+import { costRecords, costBudgets, costScope, costPeriod, costAction } from './cost.schema';
+import { traces, metrics, spanKind, spanStatus } from './observability.schema';
+import { storageObjects, storageBackend } from './storage.schema';
+import { integrations, integrationType } from './integrations.schema';
 
 // Re-export everything
 export {
   users, roles, permissions, rolePermissions, userRoles, refreshTokens, auditLogs,
-  providers, models,
-  agents, agentTools, agentModels,
-  tools, toolPermissions,
-  mcpServers, mcpTools,
-  memoryShort, memoryLong, memoryEntities, memorySummaries,
-  agentSessions, messages, artifacts, toolCalls,
-  workflows, workflowRuns, workflowStepRuns,
-  documents, documentChunks,
-  jobRecords, jobLogs,
-  costRecords, costBudgets,
-  traces, metrics,
-  storageObjects,
-  integrations,
+  userStatus, providerHealthStatus,
+  providers, models, providerType, entityStatus, modelStatus,
+  agents, agentTools, agentModels, agentType,
+  tools, toolPermissions, toolCategory, toolSource,
+  mcpServers, mcpTools, mcpTransport, mcpAuthType,
+  memoryShort, memoryLong, memoryEntities, memorySummaries, factType, messageRole,
+  agentSessions, messages, artifacts, toolCalls, sessionStatus, msgRole, artifactType, toolCallStatus,
+  workflows, workflowRuns, workflowStepRuns, workflowStatus, stepType, stepStatus, triggerType,
+  documents, documentChunks, docStatus, docSource,
+  jobRecords, jobLogs, jobStatus,
+  costRecords, costBudgets, costScope, costPeriod, costAction,
+  traces, metrics, spanKind, spanStatus,
+  storageObjects, storageBackend,
+  integrations, integrationType,
 };
 
-// Schema object for drizzle config
+// Schema object for drizzle config (include enums so drizzle-kit generates CREATE TYPE)
 export const schema = {
   users, roles, permissions, rolePermissions, userRoles, refreshTokens, auditLogs,
-  providers, models,
-  agents, agentTools, agentModels,
-  tools, toolPermissions,
-  mcpServers, mcpTools,
-  memoryShort, memoryLong, memoryEntities, memorySummaries,
-  agentSessions, messages, artifacts, toolCalls,
-  workflows, workflowRuns, workflowStepRuns,
-  documents, documentChunks,
-  jobRecords, jobLogs,
-  costRecords, costBudgets,
-  traces, metrics,
-  storageObjects,
-  integrations,
+  userStatus, providerHealthStatus,
+  providers, models, providerType, entityStatus, modelStatus,
+  agents, agentTools, agentModels, agentType,
+  tools, toolPermissions, toolCategory, toolSource,
+  mcpServers, mcpTools, mcpTransport, mcpAuthType,
+  memoryShort, memoryLong, memoryEntities, memorySummaries, factType, messageRole,
+  agentSessions, messages, artifacts, toolCalls, sessionStatus, msgRole, artifactType, toolCallStatus,
+  workflows, workflowRuns, workflowStepRuns, workflowStatus, stepType, stepStatus, triggerType,
+  documents, documentChunks, docStatus, docSource,
+  jobRecords, jobLogs, jobStatus,
+  costRecords, costBudgets, costScope, costPeriod, costAction,
+  traces, metrics, spanKind, spanStatus,
+  storageObjects, storageBackend,
+  integrations, integrationType,
 };
