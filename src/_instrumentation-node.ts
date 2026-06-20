@@ -14,7 +14,7 @@ try {
 
 export async function registerNode(): Promise<void> {
   try {
-    if (process.env.PG_AUTO_START === 'false') {
+    if (process.env.PG_AUTO_START === 'false' || process.env.NODE_ENV === 'production') {
       // Production mode: use external DATABASE_URL (Railway Postgres)
       console.log('[instrumentation:node] Production mode — using external DATABASE_URL');
       const dbUrl = process.env.DATABASE_URL;
@@ -31,6 +31,10 @@ export async function registerNode(): Promise<void> {
     }
   } catch (err) {
     console.error('[instrumentation:node] FATAL:', err);
+    // In production, don't crash — let Next.js continue
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[instrumentation:node] Continuing despite error (production mode)');
+    }
   }
 }
 
