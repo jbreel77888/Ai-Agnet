@@ -29,8 +29,8 @@ export async function registerNode(): Promise<void> {
       // Development mode: use embedded PostgreSQL
       await startEmbeddedPostgres();
     }
-  } catch (err) {
-    console.error('[instrumentation:node] FATAL:', err);
+  } catch (err: any) {
+    console.error('[instrumentation:node] FATAL:', err?.message || err, err?.stack || '');
     // In production, don't crash — let Next.js continue
     if (process.env.NODE_ENV === 'production') {
       console.error('[instrumentation:node] Continuing despite error (production mode)');
@@ -111,6 +111,92 @@ async function seedInitialData(connectionString: string): Promise<void> {
       );
     }
     console.log('[instrumentation:node] ✓ Roles created');
+
+    // Create default permissions
+    const defaultPerms = [
+      'providers:read', 'providers:write', 'providers:delete',
+      'models:read', 'models:write',
+      'agents:read', 'agents:write', 'agents:delete',
+      'tools:read', 'tools:write', 'tools:execute',
+      'mcp:read', 'mcp:write',
+      'sessions:read', 'sessions:write',
+      'memory:read', 'memory:write',
+      'workflows:read', 'workflows:write', 'workflows:execute',
+      'users:read', 'users:write',
+      'roles:read', 'roles:write',
+      'logs:read', 'traces:read', 'audit:read',
+      'costs:read', 'costs:write',
+    ];
+
+    for (const perm of defaultPerms) {
+      const [resource, action] = perm.split(':');
+      await client.query(
+        `INSERT INTO permissions (name, resource, action, description) VALUES ($1, $2, $3, $4) ON CONFLICT (name) DO NOTHING`,
+        [perm, resource, action, `${action} ${resource}`]
+      );
+    }
+    console.log('[instrumentation:node] ✓ Permissions created');
+
+    // Assign all permissions to admin role
+    await client.query(`
+      INSERT INTO role_permissions (role_id, permission_id)
+      SELECT r.id, p.id FROM roles r, permissions p
+      WHERE r.name = 'admin'
+      ON CONFLICT DO NOTHING
+    `);
+
+    // Assign limited permissions to operator role
+    const operatorPerms = [
+      'agents:read', 'agents:write',
+      'tools:read', 'tools:execute',
+      'mcp:read', 'mcp:write',
+      'sessions:read', 'sessions:write',
+      'memory:read', 'memory:write',
+      'workflows:read', 'workflows:write', 'workflows:execute',
+      'models:read', 'providers:read',
+      'logs:read', 'traces:read', 'costs:read',
+    ];
+    for (const perm of operatorPerms) {
+      await client.query(`
+        INSERT INTO role_permissions (role_id, permission_id)
+        SELECT r.id, p.id FROM roles r, permissions p
+        WHERE r.name = 'operator' AND p.name = $1
+        ON CONFLICT DO NOTHING
+      `, [perm]);
+    }
+
+    // Assign basic permissions to user role
+    const userPerms = [
+      'sessions:read', 'sessions:write',
+      'memory:read', 'memory:write',
+      'agents:read', 'tools:read',
+      'workflows:execute', 'costs:read',
+    ];
+    for (const perm of userPerms) {
+      await client.query(`
+        INSERT INTO role_permissions (role_id, permission_id)
+        SELECT r.id, p.id FROM roles r, permissions p
+        WHERE r.name = 'user' AND p.name = $1
+        ON CONFLICT DO NOTHING
+      `, [perm]);
+    }
+    console.log('[instrumentation:node] ✓ Role permissions assigned');
+
+    // Create default agents
+    const { DEFAULT_AGENTS } = require('./db/seed/agents');
+    for (const agent of DEFAULT_AGENTS) {
+      await client.query(`
+        INSERT INTO agents (name, slug, type, description, system_prompt, temperature, max_tokens, top_p, enabled, can_spawn_subagents, max_subagents, handoff_targets)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0, $8, $9, $10, $11)
+        ON CONFLICT (slug) DO NOTHING
+      `, [
+        agent.name, agent.slug, agent.type, agent.description || null,
+        agent.systemPrompt, agent.temperature.toString(), agent.maxTokens,
+        agent.enabled, agent.canSpawnSubagents, agent.maxSubagents,
+        JSON.stringify(agent.handoffTargets || []),
+      ]);
+    }
+    console.log(`[instrumentation:node] ✓ ${DEFAULT_AGENTS.length} default agents created`);
 
     // Create default admin user (password: admin123)
     // Hash with scrypt

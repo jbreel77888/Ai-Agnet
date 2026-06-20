@@ -139,6 +139,12 @@ export default function Home() {
       .then(r => r.json())
       .then(data => setHealth(data.data))
       .catch(() => {});
+
+    // If user is logged in, redirect to /admin
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      window.location.href = '/admin';
+    }
   }, []);
 
   const readyCount = MODULES.filter(m => m.status === 'ready').length;

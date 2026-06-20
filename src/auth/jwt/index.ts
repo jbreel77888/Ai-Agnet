@@ -2,11 +2,11 @@
  * JWT Service — Access + Refresh tokens
  */
 import jwt from 'jsonwebtoken';
-import { hashToken, generateToken } from '../../../utils/crypto';
-import { db } from '../../../db/client';
-import { refreshTokens } from '../../../db/schema/auth.schema';
+import { hashToken, generateToken } from '../../utils/crypto';
+import { db } from '../../db/client';
+import { refreshTokens, users, userRoles, roles } from '../../db/schema/auth.schema';
 import { eq, lt } from 'drizzle-orm';
-import type { AuthUser } from '../../../types';
+import type { AuthUser } from '../../types';
 
 export interface JWTService {
   issueTokens(user: AuthUser, deviceInfo?: Record<string, unknown>): Promise<TokenPair>;
@@ -108,17 +108,15 @@ export function createJWTService(): JWTService {
       .set({ revokedAt: new Date() })
       .where(eq(refreshTokens.id, record.id));
 
-    // Build minimal user from DB
-    const { users, userRoles, roles } = await import('../../../db/schema/auth.schema');
-    const { eq: eqFn } = await import('drizzle-orm');
-    const [user] = await db.select().from(users).where(eqFn(users.id, record.userId)).limit(1);
+    // Build minimal user from DB (already imported at top)
+    const [user] = await db.select().from(users).where(eq(users.id, record.userId)).limit(1);
     if (!user || user.status !== 'active') throw new Error('User not found or inactive');
 
     const userRoleRows = await db
       .select({ role: roles })
       .from(userRoles)
-      .innerJoin(roles, eqFn(userRoles.roleId, roles.id))
-      .where(eqFn(userRoles.userId, user.id));
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(eq(userRoles.userId, user.id));
     const userRolesList = userRoleRows.map(r => r.role.name) as any;
 
     return issueTokens({

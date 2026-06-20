@@ -12,15 +12,15 @@
 import EmbeddedPostgres from 'embedded-postgres';
 import path from 'path';
 import fs from 'fs/promises';
+import { existsSync } from 'fs';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
 // Load .env if not already loaded
 try {
   dotenv.config();
-} catch {
-  // dotenv not available — assume env is loaded by Next.js
-}
+} catch {}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.PG_DATA_DIR || path.join(process.cwd(), 'data', 'db');
@@ -29,11 +29,186 @@ const DB_NAME = process.env.PG_DB_NAME || 'agent_platform';
 const USER = process.env.PG_USER || 'postgres';
 const PASSWORD = process.env.PG_PASSWORD || 'postgres';
 
-let instance: EmbeddedPostgres | null = null;
+// Get the embedded postgres binary paths
+const PG_ROOT = path.join(process.cwd(), 'node_modules', '@embedded-postgres', 'linux-x64', 'native');
+const PG_BIN_DIR = path.join(PG_ROOT, 'bin');
+const PG_LIB_DIR = path.join(PG_ROOT, 'lib');
+const PG_BINARY = path.join(PG_BIN_DIR, 'postgres');
+const INITDB_BINARY = path.join(PG_BIN_DIR, 'initdb');
+const USER_LIB_DIR = path.join(process.env.HOME || '/home/z', '.local', 'lib');
+
+let postgresProcess: any = null;
 let started = false;
 
+/**
+ * Build LD_LIBRARY_PATH for child processes
+ */
+function getLdLibraryPath(): string {
+  return `${USER_LIB_DIR}:${PG_LIB_DIR}:${process.env.LD_LIBRARY_PATH || ''}`;
+}
+
+/**
+ * Ensure ICU library symlinks exist (Debian 13 doesn't have ICU 60 by default)
+ * The embedded-postgres package ships ICU 60.2 but the binaries look for the .60 symlink
+ */
+async function ensureIcuSymlinks(): Promise<void> {
+  try {
+    await fs.mkdir(USER_LIB_DIR, { recursive: true });
+
+    const icuLibs = [
+      { src: 'libicuuc.so.60.2', link: 'libicuuc.so.60' },
+      { src: 'libicui18n.so.60.2', link: 'libicui18n.so.60' },
+      { src: 'libicudata.so.60.2', link: 'libicudata.so.60' },
+    ];
+
+    for (const { src, link } of icuLibs) {
+      const srcPath = path.join(PG_LIB_DIR, src);
+      const linkPath = path.join(USER_LIB_DIR, link);
+      try {
+        await fs.unlink(linkPath);
+      } catch {}
+      try {
+        await fs.symlink(srcPath, linkPath);
+      } catch (err: any) {
+        if (err.code !== 'EEXIST') {
+          console.warn(`[embedded-pg] Could not create symlink ${link}:`, err.message);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[embedded-pg] Could not ensure ICU symlinks:', err.message);
+  }
+}
+
+/**
+ * Check if PostgreSQL data directory is initialized
+ */
+async function isInitialized(): Promise<boolean> {
+  try {
+    await fs.access(path.join(DATA_DIR, 'PG_VERSION'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Initialize the PostgreSQL cluster using initdb
+ */
+async function initializeCluster(): Promise<void> {
+  console.log('[embedded-pg] Initializing new cluster...');
+
+  // Write password to a temp file outside the data dir (initdb requires empty data dir)
+  const os = require('os');
+  const passwordFile = path.join(os.tmpdir(), `.pgpass_${Date.now()}_${process.pid}`);
+  await fs.writeFile(passwordFile, `${PASSWORD}\n`, { mode: 0o600 });
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(INITDB_BINARY, [
+        `--pgdata=${DATA_DIR}`,
+        `--auth=password`,
+        `--username=${USER}`,
+        `--pwfile=${passwordFile}`,
+      ], {
+        env: {
+          ...process.env,
+          LD_LIBRARY_PATH: getLdLibraryPath(),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stderr = '';
+      child.stderr?.on('data', (chunk) => {
+        const msg = chunk.toString();
+        stderr += msg;
+        console.log(`[embedded-pg] initdb: ${msg.trim()}`);
+      });
+      child.stdout?.on('data', (chunk) => {
+        console.log(`[embedded-pg] initdb: ${chunk.toString().trim()}`);
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`initdb failed (code ${code}): ${stderr}`));
+      });
+      child.on('error', reject);
+    });
+  } finally {
+    // Clean up password file
+    try {
+      await fs.unlink(passwordFile);
+    } catch {}
+  }
+}
+
+/**
+ * Start the postgres server process
+ */
+async function startServer(): Promise<void> {
+  console.log(`[embedded-pg] Starting PostgreSQL on port ${PORT}...`);
+
+  return new Promise((resolve, reject) => {
+    postgresProcess = spawn(PG_BINARY, [
+      '-D', DATA_DIR,
+      '-p', PORT.toString(),
+      '-h', '0.0.0.0',
+    ], {
+      env: {
+        ...process.env,
+        LD_LIBRARY_PATH: getLdLibraryPath(),
+      },
+      detached: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    }, 10000);
+
+    postgresProcess.stdout?.on('data', (chunk: Buffer) => {
+      const msg = chunk.toString().trim();
+      if (msg) console.log(`[embedded-pg] ${msg}`);
+      if (msg.includes('database system is ready to accept connections') && !resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+
+    postgresProcess.stderr?.on('data', (chunk: Buffer) => {
+      const msg = chunk.toString().trim();
+      if (msg) console.log(`[embedded-pg] ${msg}`);
+      if (msg.includes('database system is ready to accept connections') && !resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+
+    postgresProcess.on('error', (err: Error) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(err);
+      }
+    });
+
+    postgresProcess.on('close', (code: number) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(new Error(`PostgreSQL exited with code ${code} before becoming ready`));
+      }
+    });
+  });
+}
+
 export interface EmbeddedPostgresHandle {
-  instance: EmbeddedPostgres;
   connectionString: string;
   port: number;
   database: string;
@@ -41,9 +216,8 @@ export interface EmbeddedPostgresHandle {
 }
 
 export async function startEmbeddedPostgres(): Promise<EmbeddedPostgresHandle> {
-  if (started && instance) {
+  if (started && postgresProcess) {
     return {
-      instance,
       connectionString: getConnectionString(),
       port: PORT,
       database: DB_NAME,
@@ -51,54 +225,31 @@ export async function startEmbeddedPostgres(): Promise<EmbeddedPostgresHandle> {
     };
   }
 
-  console.log(`[embedded-pg] Starting PostgreSQL on port ${PORT}...`);
+  // Ensure ICU libraries are accessible
+  await ensureIcuSymlinks();
 
+  // Ensure data dir exists with correct permissions (700 required by PostgreSQL)
   await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.chmod(DATA_DIR, 0o700);
 
-  const pg = new EmbeddedPostgres({
-    dataDir: DATA_DIR,
-    port: PORT,
-    username: USER,
-    password: PASSWORD,
-    persistent: true,
-    debug: false,
-  });
-
-  // Check if already initialised
-  let needsInit = true;
-  try {
-    const stat = await fs.stat(path.join(DATA_DIR, 'PG_VERSION'));
-    if (stat.isFile()) needsInit = false;
-  } catch {
-    // not initialised
+  // Initialize if needed
+  if (!(await isInitialized())) {
+    await initializeCluster();
   }
 
-  if (needsInit) {
-    console.log('[embedded-pg] Initialising new cluster...');
-    await pg.initialise();
-  }
-
-  await pg.start();
+  // Start the server
+  await startServer();
   console.log('[embedded-pg] PostgreSQL started ✓');
 
   // Create database if not exists
-  try {
-    await pg.createDatabase(DB_NAME);
-    console.log(`[embedded-pg] Database "${DB_NAME}" created`);
-  } catch (err: any) {
-    if (!String(err?.message || '').includes('already exists')) {
-      console.warn('[embedded-pg] createDatabase warning:', err.message);
-    }
-  }
+  await createDatabaseIfNotExists();
 
-  // Enable required extensions
-  await enableExtensions(pg);
+  // Enable extensions
+  await enableExtensions();
 
-  instance = pg;
   started = true;
 
   return {
-    instance: pg,
     connectionString: getConnectionString(),
     port: PORT,
     database: DB_NAME,
@@ -106,29 +257,52 @@ export async function startEmbeddedPostgres(): Promise<EmbeddedPostgresHandle> {
   };
 }
 
-async function enableExtensions(pg: EmbeddedPostgres): Promise<void> {
-  const client = pg.getPgClient(DB_NAME);
-  await client.connect();
+async function createDatabaseIfNotExists(): Promise<void> {
+  // Connect to default 'postgres' db and create our db
+  const pg = require('pg');
+  const client = new pg.Client({
+    connectionString: `postgresql://${USER}:${PASSWORD}@localhost:${PORT}/postgres`,
+    connectionTimeoutMillis: 5000,
+  });
+
   try {
-    // uuid-ossp comes pre-installed usually
-    await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
+    await client.connect();
+    try {
+      await client.query(`CREATE DATABASE "${DB_NAME}"`);
+      console.log(`[embedded-pg] Database "${DB_NAME}" created`);
+    } catch (err: any) {
+      if (err.message.includes('already exists')) {
+        // OK
+      } else {
+        throw err;
+      }
+    }
+  } finally {
+    await client.end();
+  }
+}
+
+async function enableExtensions(): Promise<void> {
+  const pg = require('pg');
+  const client = new pg.Client(getConnectionString());
+
+  try {
+    await client.connect();
+    await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
     console.log('[embedded-pg] Extension "uuid-ossp" enabled ✓');
 
-    // pg_trgm for fast text search
     try {
-      await client.query('CREATE EXTENSION IF NOT EXISTS "pg_trgm";');
+      await client.query('CREATE EXTENSION IF NOT EXISTS "pg_trgm"');
       console.log('[embedded-pg] Extension "pg_trgm" enabled ✓');
     } catch (err: any) {
       console.warn('[embedded-pg] pg_trgm not available:', err.message);
     }
 
-    // pgvector - may need to be installed separately
     try {
-      await client.query('CREATE EXTENSION IF NOT EXISTS "vector";');
+      await client.query('CREATE EXTENSION IF NOT EXISTS "vector"');
       console.log('[embedded-pg] Extension "vector" (pgvector) enabled ✓');
     } catch (err: any) {
-      console.warn('[embedded-pg] pgvector not available in this build. Will use JSON storage for embeddings.');
-      console.warn('[embedded-pg] To enable: install pgvector or use PostgreSQL with pgvector support.');
+      console.warn('[embedded-pg] pgvector not available — using JSON storage for embeddings.');
     }
   } finally {
     await client.end();
@@ -140,15 +314,21 @@ export function getConnectionString(): string {
 }
 
 export async function stopEmbeddedPostgres(): Promise<void> {
-  if (instance && started) {
+  if (postgresProcess) {
     console.log('[embedded-pg] Stopping...');
-    await instance.stop();
+    try {
+      postgresProcess.kill('SIGTERM');
+      await new Promise((resolve) => {
+        postgresProcess.on('close', resolve);
+        setTimeout(resolve, 5000);
+      });
+    } catch {}
+    postgresProcess = null;
     started = false;
-    instance = null;
     console.log('[embedded-pg] Stopped ✓');
   }
 }
 
 export function isRunning(): boolean {
-  return started;
+  return started && postgresProcess !== null;
 }
