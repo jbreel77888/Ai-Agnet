@@ -14,7 +14,21 @@ try {
 
 export async function registerNode(): Promise<void> {
   try {
-    await startEmbeddedPostgres();
+    if (process.env.PG_AUTO_START === 'false') {
+      // Production mode: use external DATABASE_URL (Railway Postgres)
+      console.log('[instrumentation:node] Production mode — using external DATABASE_URL');
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) {
+        console.error('[instrumentation:node] DATABASE_URL not set!');
+        return;
+      }
+      // Run migrations on external DB
+      await applyMigrations(dbUrl);
+      await seedInitialData(dbUrl);
+    } else {
+      // Development mode: use embedded PostgreSQL
+      await startEmbeddedPostgres();
+    }
   } catch (err) {
     console.error('[instrumentation:node] FATAL:', err);
   }

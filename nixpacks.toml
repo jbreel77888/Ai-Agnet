@@ -1,0 +1,18 @@
+# Nixpacks configuration for Railway deployment
+# Next.js 16 requires Node 20+
+
+[phases.setup]
+nixPkgs = ['nodejs_22', 'bun', 'openssl']
+
+[phases.install]
+cmds = ['bun install --frozen-lockfile']
+
+[phases.build]
+cmds = ['bun run build']
+
+[start]
+cmd = 'bun run start'
+
+[variables]
+NODE_ENV = 'production'
+NIXPACKS_NODE_VERSION = '22'
