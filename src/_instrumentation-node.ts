@@ -84,20 +84,15 @@ async function seedInitialData(connectionString: string): Promise<void> {
   await client.connect();
 
   try {
-    // Check if already seeded
+    // Check if users table exists
     const r = await client.query("SELECT count(*) FROM information_schema.tables WHERE table_name='users'");
     if (parseInt(r.rows[0].count, 10) === 0) {
       console.log('[instrumentation:node] Users table not found — skipping seed');
       return;
     }
 
-    const usersCount = await client.query('SELECT count(*) FROM users');
-    if (parseInt(usersCount.rows[0].count, 10) > 0) {
-      console.log('[instrumentation:node] ✓ Seed data already present');
-      return;
-    }
-
-    console.log('[instrumentation:node] Seeding initial data...');
+    // Always run idempotent seed operations (each uses ON CONFLICT DO NOTHING)
+    console.log('[instrumentation:node] Running idempotent seed...');
 
     // Create roles
     for (const role of [
@@ -110,7 +105,7 @@ async function seedInitialData(connectionString: string): Promise<void> {
         [role.name, role.description]
       );
     }
-    console.log('[instrumentation:node] ✓ Roles created');
+    console.log('[instrumentation:node] ✓ Roles ensured');
 
     // Create default permissions
     const defaultPerms = [
@@ -198,31 +193,36 @@ async function seedInitialData(connectionString: string): Promise<void> {
     }
     console.log(`[instrumentation:node] ✓ ${DEFAULT_AGENTS.length} default agents created`);
 
-    // Create default admin user (password: admin123)
-    // Hash with scrypt
+    // Create default admin user (password: admin123) if not exists
     const crypto = require('crypto');
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.scryptSync('admin123', salt, 64).toString('hex');
-    const passwordHash = `scrypt$${salt}$${hash}`;
+    const [existingAdmin] = (await client.query("SELECT id FROM users WHERE email = 'admin@agent-platform.local'")).rows;
 
-    await client.query(
-      `INSERT INTO users (email, password_hash, name, status) VALUES ($1, $2, $3, 'active')
-       ON CONFLICT (email) DO NOTHING`,
-      ['admin@agent-platform.local', passwordHash, 'System Admin']
-    );
+    if (!existingAdmin) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync('admin123', salt, 64).toString('hex');
+      const passwordHash = `scrypt$${salt}$${hash}`;
 
-    // Assign admin role to admin user
-    await client.query(`
-      INSERT INTO user_roles (user_id, role_id)
-      SELECT u.id, r.id FROM users u, roles r
-      WHERE u.email = 'admin@agent-platform.local' AND r.name = 'admin'
-      ON CONFLICT DO NOTHING
-    `);
+      await client.query(
+        `INSERT INTO users (email, password_hash, name, status) VALUES ($1, $2, $3, 'active')
+         ON CONFLICT (email) DO NOTHING`,
+        ['admin@agent-platform.local', passwordHash, 'System Admin']
+      );
 
-    console.log('[instrumentation:node] ✓ Default admin user created:');
-    console.log('    Email: admin@agent-platform.local');
-    console.log('    Password: admin123');
-    console.log('    ⚠️  Change password after first login!');
+      // Assign admin role
+      await client.query(`
+        INSERT INTO user_roles (user_id, role_id)
+        SELECT u.id, r.id FROM users u, roles r
+        WHERE u.email = 'admin@agent-platform.local' AND r.name = 'admin'
+        ON CONFLICT DO NOTHING
+      `);
+
+      console.log('[instrumentation:node] ✓ Default admin user created:');
+      console.log('    Email: admin@agent-platform.local');
+      console.log('    Password: admin123');
+      console.log('    ⚠️  Change password after first login!');
+    } else {
+      console.log('[instrumentation:node] ✓ Admin user already exists');
+    }
   } catch (err: any) {
     console.error('[instrumentation:node] Seed error:', err.message);
   } finally {
