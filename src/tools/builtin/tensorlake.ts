@@ -81,7 +81,7 @@ export class TensorlakeSandboxTool implements ITool {
       // Write optional files
       if (args.files) {
         for (const [path, content] of Object.entries(args.files)) {
-          await sandbox.writeFile(`/workspace/${path}`, Buffer.from(content));
+          await sandbox.writeFile(`/tmp/${path}`, Buffer.from(content));
         }
       }
 
@@ -92,23 +92,23 @@ export class TensorlakeSandboxTool implements ITool {
 
       switch (args.language) {
         case 'python':
-          // Write code to a temp file and execute
-          await sandbox.writeFile('/workspace/_exec.py', Buffer.from(code));
+          // Write code to /tmp and execute
+          await sandbox.writeFile('/tmp/_exec.py', Buffer.from(code));
           command = 'python';
-          cmdArgs = ['/workspace/_exec.py'];
+          cmdArgs = ['/tmp/_exec.py'];
           break;
         case 'javascript':
         case 'js':
-          await sandbox.writeFile('/workspace/_exec.js', Buffer.from(code));
+          await sandbox.writeFile('/tmp/_exec.js', Buffer.from(code));
           command = 'node';
-          cmdArgs = ['/workspace/_exec.js'];
+          cmdArgs = ['/tmp/_exec.js'];
           break;
         case 'bash':
         case 'shell':
         case 'sh':
-          await sandbox.writeFile('/workspace/_exec.sh', Buffer.from(code));
+          await sandbox.writeFile('/tmp/_exec.sh', Buffer.from(code));
           command = 'bash';
-          cmdArgs = ['/workspace/_exec.sh'];
+          cmdArgs = ['/tmp/_exec.sh'];
           break;
         default:
           return {
