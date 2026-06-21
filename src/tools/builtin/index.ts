@@ -134,12 +134,53 @@ export function registerBuiltinTools(): void {
     try {
       const { TensorlakeSandboxTool } = require('./tensorlake');
       registry.register(new TensorlakeSandboxTool());
-      console.log('[tools] Registered 6 built-in tools (including Tensorlake sandbox)');
-      return;
     } catch (err) {
       console.warn('[tools] Failed to register Tensorlake tool:', err);
     }
   }
 
-  console.log('[tools] Registered 5 built-in tools');
+  // Register Browser tool (Playwright)
+  try {
+    const { BrowserTool } = require('./browser');
+    registry.register(new BrowserTool());
+  } catch (err) {
+    console.warn('[tools] Browser tool not registered:', err);
+  }
+
+  // Register integration tools if configured
+  try {
+    const { GitHubIntegration } = require('../../integrations/github');
+    const gh = new GitHubIntegration();
+    // Register as a tool wrapper
+    const ghTool = {
+      name: 'github',
+      description: 'Interact with GitHub: list repos, issues, create issues, get files',
+      category: 'integration',
+      schema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['list_repos', 'list_issues', 'create_issue', 'get_file'] },
+          owner: { type: 'string' }, repo: { type: 'string' },
+          title: { type: 'string' }, body: { type: 'string' },
+          path: { type: 'string' }, branch: { type: 'string' }, username: { type: 'string' },
+        },
+        required: ['action'],
+      },
+      validate: (args: any) => ({ valid: !!args?.action }),
+      execute: async (args: any) => {
+        switch (args.action) {
+          case 'list_repos': return gh.listRepos(args.username);
+          case 'list_issues': return gh.listIssues(args.owner, args.repo);
+          case 'create_issue': return gh.createIssue(args.owner, args.repo, args.title, args.body || '');
+          case 'get_file': return gh.getFile(args.owner, args.repo, args.path, args.branch);
+          default: return { success: false, error: { code: 'UNKNOWN', message: `Unknown action: ${args.action}` } };
+        }
+      },
+      initialize: async () => {}, shutdown: async () => {},
+    };
+    registry.register(ghTool);
+  } catch {}
+
+  const count = registry.list().length;
+  console.log(`[tools] Registered ${count} tools`);
 }

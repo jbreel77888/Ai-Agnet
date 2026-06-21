@@ -202,6 +202,18 @@ async function seedInitialData(connectionString: string): Promise<void> {
       console.error('[instrumentation:node] Failed to register tools:', err);
     }
 
+    // Start scheduler for background jobs
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        const { getScheduler } = require('./background/scheduler');
+        const scheduler = getScheduler();
+        scheduler.start();
+        console.log('[instrumentation:node] ✓ Scheduler started');
+      } catch (err) {
+        console.error('[instrumentation:node] Scheduler failed:', err);
+      }
+    }
+
     // Create default admin user (password: admin123) if not exists
     const crypto = require('crypto');
     const [existingAdmin] = (await client.query("SELECT id FROM users WHERE email = 'admin@agent-platform.local'")).rows;
