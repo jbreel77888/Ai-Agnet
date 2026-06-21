@@ -186,6 +186,13 @@ class AgentOrchestratorImpl {
     const pool = await getPoolClient();
     const client = await pool.connect();
     try {
+      // Debug: check which database we're connected to
+      const dbInfo = await client.query('SELECT current_database(), current_schema()');
+      console.log('[orchestrator] Connected to DB:', dbInfo.rows[0]);
+
+      const tableCheck = await client.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='messages'");
+      console.log('[orchestrator] messages table exists:', tableCheck.rows.length > 0);
+
       console.log('[orchestrator] Inserting user message, sessionId:', sessionId);
       await client.query(
         `INSERT INTO messages (session_id, role, content) VALUES ($1, 'user', $2)`,
