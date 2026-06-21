@@ -159,8 +159,18 @@ class AgentOrchestratorImpl {
     const agent = registry.list().find(a => a.id === session.agentId);
     if (!agent) throw new Error('Agent not found');
 
-    // Save user message (use raw SQL to avoid numeric type issues)
-    await db.execute(sql`INSERT INTO messages (session_id, role, content, tokens_input, tokens_output, cost, latency_ms) VALUES (${sessionId}, 'user', ${opts.content}, ${0}, ${0}, ${sql.raw('0')}, ${0})`);
+    // Save user message (use pg.Client directly to avoid Drizzle numeric issues)
+    const pg = require('pg');
+    const pgClient = new pg.Client(process.env.DATABASE_URL);
+    await pgClient.connect();
+    try {
+      await pgClient.query(
+        `INSERT INTO messages (session_id, role, content, tokens_input, tokens_output, cost, latency_ms) VALUES ($1, 'user', $2, 0, 0, 0, 0)`,
+        [sessionId, opts.content]
+      );
+    } finally {
+      await pgClient.end();
+    }
 
     // Update session activity
     await db.update(agentSessions).set({
@@ -209,23 +219,26 @@ class AgentOrchestratorImpl {
       yield event;
     }
 
-    // Save assistant response (use raw SQL to avoid numeric type issues)
-    const costStr = cost.toFixed(6);
-    const savedMsgResult = await db.execute(sql`
-      INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, latency_ms, finish_reason)
-      VALUES (${sessionId}, 'assistant', ${fullContent}, ${opts.modelId || null}, ${Math.floor(tokensUsed * 0.3)}, ${Math.floor(tokensUsed * 0.7)}, ${sql.raw(costStr)}, ${0}, 'stop')
-      RETURNING id
-    `);
-    const savedMsgId = (savedMsgResult as any).rows?.[0]?.id || 'unknown';
+    // Save assistant response (use pg.Client directly)
+    const pg2 = require('pg');
+    const pgClient2 = new pg2.Client(process.env.DATABASE_URL);
+    await pgClient2.connect();
+    let savedMsgId = 'unknown';
+    try {
+      const result = await pgClient2.query(
+        `INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, latency_ms, finish_reason) VALUES ($1, 'assistant', $2, $3, $4, $5, $6, 0, 'stop') RETURNING id`,
+        [sessionId, fullContent, opts.modelId || null, Math.floor(tokensUsed * 0.3), Math.floor(tokensUsed * 0.7), cost.toFixed(6)]
+      );
+      savedMsgId = result.rows[0]?.id || 'unknown';
 
-    // Update session totals (use raw SQL for numeric type)
-    await db.execute(sql`
-      UPDATE agent_sessions
-      SET total_tokens = total_tokens + ${tokensUsed},
-          total_cost = total_cost + ${sql.raw(costStr)},
-          last_activity_at = NOW()
-      WHERE id = ${sessionId}
-    `);
+      // Update session totals
+      await pgClient2.query(
+        `UPDATE agent_sessions SET total_tokens = total_tokens + $1, total_cost = total_cost + $2, last_activity_at = NOW() WHERE id = $3`,
+        [tokensUsed, cost.toFixed(6), sessionId]
+      );
+    } finally {
+      await pgClient2.end();
+    }
 
     yield { type: 'message_saved', messageId: savedMsgId };
   }
