@@ -5,11 +5,12 @@
  * running in Node.js runtime (NOT Edge).
  */
 
-// Load .env first thing (before any other logic)
-try {
-  require('dotenv').config();
-} catch {
-  // dotenv not available
+// Load .env only in development (in production, Railway provides env vars)
+// CRITICAL: dotenv.config() would override Railway's DATABASE_URL
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    require('dotenv').config();
+  } catch {}
 }
 
 export async function registerNode(): Promise<void> {
