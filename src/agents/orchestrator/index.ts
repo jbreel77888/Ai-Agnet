@@ -22,9 +22,8 @@ import type { AgentEvent, AgentContext, ChatMessage } from '../../types';
  */
 async function getPoolClient() {
   const { Pool } = require('pg');
-  // In production, DATABASE_URL is set by Railway and should point to Railway Postgres
-  // In development, it's set by instrumentation to localhost:5433
   const connectionString = process.env.DATABASE_URL;
+  console.log('[orchestrator] DATABASE_URL:', connectionString?.substring(0, 50) + '...');
   if (!connectionString) {
     throw new Error('DATABASE_URL not set');
   }
