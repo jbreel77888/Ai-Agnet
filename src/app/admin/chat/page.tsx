@@ -71,6 +71,7 @@ const UNIVERSAL_AGENT_NAME = 'Agent';
 // ─────────────────────────────────────────────────────────────────────────────
 type SSEEvent =
   | { type: 'started'; agentId: string; input: { task: string } }
+  | { type: 'agent_selected'; routing: { agentSlug: string; agentName: string; confidence: number; reason: string; detectedIntent: string; detectedTools: string[]; alternatives: Array<{ slug: string; name: string; score: number }> } }
   | { type: 'thinking'; content: string }
   | { type: 'message_chunk'; content: string }
   | { type: 'tool_call'; toolName: string; args: unknown; toolCallId: string }
@@ -549,6 +550,20 @@ export default function ChatPage() {
               }));
               break;
             }
+            case 'agent_selected': {
+              // The orchestrator picked a specialist agent for this message.
+              // Apply the agent's slug + name to the assistant message so the
+              // avatar / label updates dynamically.
+              const r = event.routing;
+              console.log(`[chat] Routed to ${r.agentSlug} (conf=${(r.confidence * 100).toFixed(0)}%) — ${r.reason}`);
+              updateAssistant(m => ({
+                ...m,
+                agentSlug: r.agentSlug,
+                agentName: r.agentName,
+                agentConfidence: r.confidence,
+              }));
+              break;
+            }
             case 'thinking': {
               // Accumulate REAL model reasoning text
               if (thinkingStartedAtRef.current === null) {
@@ -773,11 +788,11 @@ export default function ChatPage() {
                 <Menu className="w-4 h-4" />
               </Button>
 
-              {/* Universal agent badge */}
+              {/* Universal agent badge — single UI, multi-agent backend */}
               <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span className="text-[12px] font-medium">{UNIVERSAL_AGENT_NAME}</span>
-                <span className="text-[10px] uppercase opacity-70 hidden sm:inline">universal</span>
+                <span className="text-[12px] font-medium">Agent</span>
+                <span className="text-[10px] uppercase opacity-70 hidden sm:inline">auto-routing</span>
               </div>
 
               {/* Active mode indicators */}

@@ -13,6 +13,7 @@ import { db, dbPool } from '../../db/client';
 import { agentSessions, messages, models } from '../../db/schema';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { getAgentRegistry } from '../registry';
+import { routeMessage, type RoutingDecision } from '../router';
 import type { AgentEvent, AgentContext, ChatMessage } from '../../types';
 
 /**
@@ -175,7 +176,7 @@ class AgentOrchestratorImpl {
     }
   }
 
-  async *sendMessage(sessionId: string, opts: SendMessageOpts): AsyncIterable<AgentEvent | { type: 'message_saved'; messageId: string }> {
+  async *sendMessage(sessionId: string, opts: SendMessageOpts): AsyncIterable<AgentEvent | { type: 'message_saved'; messageId: string } | { type: 'agent_selected'; routing: RoutingDecision }> {
     const registry = getAgentRegistry();
     await registry.loadFromDB();
 
@@ -186,8 +187,23 @@ class AgentOrchestratorImpl {
       .limit(1);
     if (!session) throw new Error('Session not found');
 
-    const agent = registry.list().find(a => a.id === session.agentId);
+    // ── Dynamic agent routing ───────────────────────────────────────────────
+    // Instead of always using the session's bound agent (planner), classify the
+    // user's message and pick the best specialist. The planner is the fallback.
+    const routing = routeMessage(opts.content);
+    console.log(`[orchestrator] Routing decision: ${routing.agentSlug} (conf=${routing.confidence.toFixed(2)}) — ${routing.reason}`);
+
+    // Find the chosen agent in the registry. If it's not registered (e.g. disabled),
+    // fall back to the session's bound agent.
+    let agent = registry.get(routing.agentSlug);
+    if (!agent) {
+      console.warn(`[orchestrator] Agent "${routing.agentSlug}" not registered, falling back to session agent`);
+      agent = registry.list().find(a => a.id === session.agentId);
+    }
     if (!agent) throw new Error('Agent not found');
+
+    // Emit an event so the UI can show which agent was selected for this message
+    yield { type: 'agent_selected', routing } as any;
 
     // Save user message — use fresh pg pool for maximum compatibility
     const pool = await getPoolClient();

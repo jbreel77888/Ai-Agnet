@@ -102,7 +102,7 @@ function SidebarBody({
           </div>
           <span className="text-sm font-semibold tracking-tight">Agent</span>
           <Badge variant="secondary" className="ml-auto text-[9.5px] h-4 px-1.5 bg-slate-800 text-slate-400 border-slate-700">
-            universal
+            auto-route
           </Badge>
         </div>
         <Button
@@ -128,7 +128,7 @@ function SidebarBody({
           New Chat
         </Button>
         <p className="text-[10.5px] text-slate-500 leading-relaxed">
-          The agent auto-selects the right tools and strategy based on your request.
+          The system auto-selects the right specialist agent for each message.
         </p>
       </div>
 

@@ -19,11 +19,19 @@
  *                  markdown body, copy button, metadata footer
  *   - error      → rose-tinted card with alert icon
  *   - system     → centered muted pill
+ *
+ * The agent avatar/label is now DYNAMIC — each assistant message can be
+ * attributed to a different specialist agent (planner, coding, research,
+ * reasoning, etc.) based on the dynamic agent router. The avatar color
+ * and icon change per agent slug.
  */
 import { useState, useCallback, memo } from 'react';
 import { motion } from 'framer-motion';
 import {
   User, Bot, Copy, Check, AlertTriangle, Info, RefreshCw, Sparkles,
+  Brain, Search, Code2, Play, Wrench, Database as DatabaseIcon,
+  Eye, FileText, Lightbulb,
+  type LucideIcon,
 } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { ThinkingPanel } from './ThinkingPanel';
@@ -34,6 +42,37 @@ import { Button } from '@/components/ui/button';
 
 export type MessageRole =
   | 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'error' | 'system';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent visual identity — each specialist has its own color + icon
+// ─────────────────────────────────────────────────────────────────────────────
+export interface AgentStyle {
+  slug: string;
+  name: string;
+  icon: LucideIcon;
+  gradient: string;       // tailwind gradient classes
+  badgeColor: string;     // tailwind text/bg for label
+  description: string;
+}
+
+const AGENT_STYLES: Record<string, AgentStyle> = {
+  planner:    { slug: 'planner',    name: 'Planner',    icon: Lightbulb,    gradient: 'from-emerald-500 to-teal-600',     badgeColor: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300', description: 'Plans & coordinates' },
+  research:   { slug: 'research',   name: 'Research',   icon: Search,       gradient: 'from-sky-500 to-blue-600',          badgeColor: 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',          description: 'Searches & investigates' },
+  reasoning:  { slug: 'reasoning',  name: 'Reasoning',  icon: Brain,        gradient: 'from-purple-500 to-violet-600',    badgeColor: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300', description: 'Logical analysis' },
+  coding:     { slug: 'coding',     name: 'Coding',     icon: Code2,        gradient: 'from-amber-500 to-orange-600',     badgeColor: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300', description: 'Writes code' },
+  execution:  { slug: 'execution',  name: 'Execution',  icon: Play,         gradient: 'from-rose-500 to-red-600',         badgeColor: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300',     description: 'Runs commands' },
+  tool:       { slug: 'tool',       name: 'Tool',       icon: Wrench,       gradient: 'from-cyan-500 to-teal-600',        badgeColor: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300',     description: 'Invokes tools' },
+  memory:     { slug: 'memory',     name: 'Memory',     icon: DatabaseIcon, gradient: 'from-indigo-500 to-purple-600',    badgeColor: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300', description: 'Stores & recalls' },
+  reflection: { slug: 'reflection', name: 'Reflection', icon: Eye,          gradient: 'from-pink-500 to-rose-600',        badgeColor: 'bg-pink-50 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300',     description: 'Reviews & critiques' },
+  summarizer: { slug: 'summarizer', name: 'Summarizer', icon: FileText,     gradient: 'from-slate-500 to-slate-700',      badgeColor: 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300', description: 'Compresses text' },
+};
+
+const DEFAULT_AGENT_STYLE: AgentStyle = AGENT_STYLES.planner;
+
+function getAgentStyle(slug?: string): AgentStyle {
+  if (!slug) return DEFAULT_AGENT_STYLE;
+  return AGENT_STYLES[slug] || DEFAULT_AGENT_STYLE;
+}
 
 export interface ChatMessageData {
   id: string;
@@ -60,14 +99,18 @@ export interface ChatMessageData {
   /** Agent display name (kept for compat — single universal agent). */
   agentType?: string;
   agentName?: string;
+  /** Agent slug — used to pick the avatar color + icon dynamically. */
+  agentSlug?: string;
+  /** Routing confidence (0..1) — shown as a subtle indicator. */
+  agentConfidence?: number;
   /** True while this message is actively receiving streamed chunks. */
   isStreaming?: boolean;
   /** True if this assistant turn failed. */
   isError?: boolean;
 }
 
-function Avatar({ role, agentName }: {
-  role: MessageRole; agentName?: string;
+function Avatar({ role, agentSlug }: {
+  role: MessageRole; agentSlug?: string;
 }) {
   if (role === 'user') {
     return (
@@ -83,13 +126,15 @@ function Avatar({ role, agentName }: {
       </div>
     );
   }
-  // assistant — single universal agent (emerald/teal)
+  // assistant — color & icon picked dynamically from agentSlug
+  const style = getAgentStyle(agentSlug);
+  const Icon = style.icon;
   return (
     <div
-      className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm"
-      title={agentName || 'Agent'}
+      className={`w-8 h-8 rounded-lg bg-gradient-to-br ${style.gradient} flex items-center justify-center text-white flex-shrink-0 shadow-sm`}
+      title={`${style.name} — ${style.description}`}
     >
-      <Sparkles className="w-4 h-4" />
+      <Icon className="w-4 h-4" />
     </div>
   );
 }
@@ -227,6 +272,10 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
   const hasArtifacts = (message.artifacts?.length ?? 0) > 0;
   const isEmpty = !message.content && !hasThinking && !hasTools && !hasArtifacts;
 
+  // Pick the agent visual style dynamically based on agentSlug
+  const agentStyle = getAgentStyle(message.agentSlug);
+  const AgentIcon = agentStyle.icon;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -234,15 +283,22 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
       transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
       className={`flex gap-3 my-3 ${isUser ? 'justify-end' : 'justify-start'}`}
     >
-      {!isUser && <Avatar role={message.role} agentName={message.agentName} />}
+      {!isUser && <Avatar role={message.role} agentSlug={message.agentSlug} />}
 
       <div className={`group max-w-[85%] sm:max-w-[75%] ${isUser ? 'order-first' : ''}`}>
-        {/* Agent label (assistant) */}
+        {/* Agent label (assistant) — dynamic per agent */}
         {!isUser && (
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-[11px] font-semibold text-foreground">
-              {message.agentName || 'Agent'}
+          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${agentStyle.badgeColor}`}>
+              <AgentIcon className="w-3 h-3" />
+              {agentStyle.name}
             </span>
+            <span className="text-[10px] text-muted-foreground/70">{agentStyle.description}</span>
+            {message.agentConfidence !== undefined && message.agentConfidence < 0.7 && (
+              <span className="text-[9px] text-muted-foreground/50 font-mono" title="Routing confidence">
+                · {(message.agentConfidence * 100).toFixed(0)}%
+              </span>
+            )}
             {message.isStreaming && (
               <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <RefreshCw className="w-2.5 h-2.5 animate-spin" />
