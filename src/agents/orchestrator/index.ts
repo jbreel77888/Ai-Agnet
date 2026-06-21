@@ -160,7 +160,7 @@ class AgentOrchestratorImpl {
     if (!agent) throw new Error('Agent not found');
 
     // Save user message (use raw SQL to avoid numeric type issues)
-    await db.execute(sql`INSERT INTO messages (session_id, role, content, tokens_input, tokens_output, cost, latency_ms) VALUES (${sessionId}, 'user', ${opts.content}, 0, 0, '0', 0)`);
+    await db.execute(sql`INSERT INTO messages (session_id, role, content, tokens_input, tokens_output, cost, latency_ms) VALUES (${sessionId}, 'user', ${opts.content}, 0, 0, 0::numeric, 0)`);
 
     // Update session activity
     await db.update(agentSessions).set({
@@ -212,7 +212,7 @@ class AgentOrchestratorImpl {
     // Save assistant response (use raw SQL to avoid numeric type issues)
     const savedMsgResult = await db.execute(sql`
       INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, latency_ms, finish_reason)
-      VALUES (${sessionId}, 'assistant', ${fullContent}, ${opts.modelId || null}, ${Math.floor(tokensUsed * 0.3)}, ${Math.floor(tokensUsed * 0.7)}, ${cost.toFixed(6)}, 0, 'stop')
+      VALUES (${sessionId}, 'assistant', ${fullContent}, ${opts.modelId || null}, ${Math.floor(tokensUsed * 0.3)}, ${Math.floor(tokensUsed * 0.7)}, ${cost.toFixed(6)}::numeric, 0, 'stop')
       RETURNING id
     `);
     const savedMsgId = (savedMsgResult as any).rows?.[0]?.id || 'unknown';
@@ -221,7 +221,7 @@ class AgentOrchestratorImpl {
     await db.execute(sql`
       UPDATE agent_sessions
       SET total_tokens = total_tokens + ${tokensUsed},
-          total_cost = (total_cost::numeric + ${cost.toFixed(6)})::numeric(10,4),
+          total_cost = total_cost + ${cost.toFixed(6)}::numeric,
           last_activity_at = NOW()
       WHERE id = ${sessionId}
     `);
