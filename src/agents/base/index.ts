@@ -81,15 +81,22 @@ export class BaseAgent implements IAgent {
       const modelId = await this.resolveModelId(ctx);
       if (!modelId) throw new Error('No model available — add a provider with models first');
 
+      // ── Build initial message history ─────────────────────────────────────
+      // Keep last 20 messages from context to avoid blowing context window.
+      // The user's task is already in ctx.messages (the orchestrator pushed it).
       const messages: ChatMessage[] = [];
       if (ctx.messages && ctx.messages.length > 0) {
         messages.push(...ctx.messages.slice(-20));
       }
-      messages.push({ role: 'user', content: input.task });
+      // Ensure the user's task is the last user message
+      const lastMsg = messages[messages.length - 1];
+      if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== input.task) {
+        messages.push({ role: 'user', content: input.task });
+      }
 
       const providerManager = getProviderManager();
 
-      // Get available tools
+      // ── Get available tools ───────────────────────────────────────────────
       let toolDefs: ToolDefinition[] | undefined;
       try {
         const { registerBuiltinTools } = await import('../../tools/builtin');
@@ -98,82 +105,140 @@ export class BaseAgent implements IAgent {
         toolDefs = registry.toOpenAITools();
       } catch {}
 
+      // ── ReAct Loop ────────────────────────────────────────────────────────
+      // Reasoning + Acting loop: keep calling LLM → execute tool calls → feed
+      // results back → repeat. Stop when:
+      //   1. LLM returns no tool calls (final answer)
+      //   2. maxStepsPerRun reached (default 20)
+      //   3. cancellation requested
+      //   4. error
+      const maxSteps = this.config.maxStepsPerRun || 20;
+      let step = 0;
       let fullContent = '';
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
-      // Tool calls come in fragments during streaming — accumulate them
-      const toolCallAccumulator = new Map<number, { id: string; name: string; argumentsStr: string }>();
 
-      try {
-        const stream = providerManager.chatStream({
-          modelId, messages,
-          systemPrompt: this.config.systemPrompt,
-          temperature: this.config.temperature,
-          maxTokens: this.config.maxTokens,
-          topP: this.config.topP,
-          tools: toolDefs,
-        }, { userId: ctx.userId, sessionId: ctx.sessionId, agentId: this.id });
+      while (step < maxSteps && !this.cancelled) {
+        step++;
+        if (step > 1) {
+          // Emit a thinking marker for steps after the first
+          yield { type: 'thinking', content: `Step ${step}: continuing after tool execution...` };
+        }
 
-        for await (const chunk of stream) {
-          if (this.cancelled) { yield { type: 'cancelled', reason: 'User cancelled' }; return; }
-          if (chunk.delta?.content) { fullContent += chunk.delta.content; yield { type: 'message_chunk', content: chunk.delta.content }; }
-          if (chunk.delta?.toolCalls) {
-            for (const tc of chunk.delta.toolCalls as any[]) {
-              const idx = (tc as any).index ?? 0;
-              const existing = toolCallAccumulator.get(idx) || { id: '', name: '', argumentsStr: '' };
-              if (tc.id) existing.id = tc.id;
-              if (tc.name) existing.name = tc.name;
-              if (tc.arguments !== undefined) {
-                const argStr = typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments);
-                existing.argumentsStr += argStr;
+        // ── 1. LLM call (stream) ──────────────────────────────────────────
+        // On step 1 we stream (so user sees partial response). On follow-up
+        // steps (after tool results), we also stream for live feedback.
+        let stepContent = '';
+        const toolCallAccumulator = new Map<number, { id: string; name: string; argumentsStr: string }>();
+
+        try {
+          const stream = providerManager.chatStream({
+            modelId,
+            messages,
+            systemPrompt: this.config.systemPrompt,
+            temperature: this.config.temperature,
+            maxTokens: this.config.maxTokens,
+            topP: this.config.topP,
+            tools: toolDefs,
+          }, { userId: ctx.userId, sessionId: ctx.sessionId, agentId: this.id });
+
+          for await (const chunk of stream) {
+            if (this.cancelled) { yield { type: 'cancelled', reason: 'User cancelled' }; return; }
+            if (chunk.delta?.content) {
+              stepContent += chunk.delta.content;
+              fullContent += chunk.delta.content;
+              yield { type: 'message_chunk', content: chunk.delta.content };
+            }
+            if (chunk.delta?.toolCalls) {
+              for (const tc of chunk.delta.toolCalls as any[]) {
+                const idx = (tc as any).index ?? 0;
+                const existing = toolCallAccumulator.get(idx) || { id: '', name: '', argumentsStr: '' };
+                if (tc.id) existing.id = tc.id;
+                if (tc.name) existing.name = tc.name;
+                if (tc.arguments !== undefined) {
+                  const argStr = typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments);
+                  existing.argumentsStr += argStr;
+                }
+                toolCallAccumulator.set(idx, existing);
               }
-              toolCallAccumulator.set(idx, existing);
+            }
+            if (chunk.usage) {
+              totalInputTokens = chunk.usage.inputTokens;
+              totalOutputTokens = chunk.usage.outputTokens;
             }
           }
-          if (chunk.usage) { totalInputTokens = chunk.usage.inputTokens; totalOutputTokens = chunk.usage.outputTokens; }
-        }
-      } catch (streamErr: any) {
-        console.warn(`[agent:${this.slug}] Stream failed, trying non-stream:`, streamErr.message);
-        const response = await providerManager.chat({
-          modelId, messages,
-          systemPrompt: this.config.systemPrompt,
-          temperature: this.config.temperature,
-          maxTokens: this.config.maxTokens,
-          topP: this.config.topP,
-          tools: toolDefs,
-        }, { userId: ctx.userId, sessionId: ctx.sessionId, agentId: this.id });
-        fullContent = response.content;
-        totalInputTokens = response.usage.inputTokens;
-        totalOutputTokens = response.usage.outputTokens;
-        if (response.toolCalls) {
-          response.toolCalls.forEach((tc, i) => {
-            toolCallAccumulator.set(i, {
-              id: tc.id,
-              name: tc.name,
-              argumentsStr: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments),
-            });
-          });
-        }
-        yield { type: 'message_chunk', content: fullContent };
-      }
-
-      // Convert accumulated tool calls to ToolCall[]
-      let toolCalls: ToolCall[] | undefined;
-      if (toolCallAccumulator.size > 0) {
-        toolCalls = Array.from(toolCallAccumulator.values())
-          .filter(tc => tc.name) // Filter out unnamed fragments
-          .map(tc => {
-            let args: any = {};
-            if (tc.argumentsStr) {
-              try { args = JSON.parse(tc.argumentsStr); } catch { args = {}; }
+        } catch (streamErr: any) {
+          // Stream failed — fall back to non-stream for this step
+          console.warn(`[agent:${this.slug}] Step ${step} stream failed, trying non-stream:`, streamErr.message);
+          try {
+            const response = await providerManager.chat({
+              modelId, messages,
+              systemPrompt: this.config.systemPrompt,
+              temperature: this.config.temperature,
+              maxTokens: this.config.maxTokens,
+              topP: this.config.topP,
+              tools: toolDefs,
+            }, { userId: ctx.userId, sessionId: ctx.sessionId, agentId: this.id });
+            stepContent = response.content;
+            fullContent += response.content;
+            if (response.content) yield { type: 'message_chunk', content: response.content };
+            totalInputTokens += response.usage.inputTokens;
+            totalOutputTokens += response.usage.outputTokens;
+            if (response.toolCalls) {
+              response.toolCalls.forEach((tc, i) => {
+                toolCallAccumulator.set(i, {
+                  id: tc.id,
+                  name: tc.name,
+                  argumentsStr: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments),
+                });
+              });
             }
-            return { id: tc.id || `call_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: tc.name, arguments: args };
-          });
-        if (toolCalls.length === 0) toolCalls = undefined;
-      }
+          } catch (fallbackErr: any) {
+            // Both stream and fallback failed — if this is step 1, surface the error.
+            // If later step, emit a partial error event but keep going.
+            if (step === 1) throw fallbackErr;
+            yield { type: 'thinking', content: `Step ${step}: LLM error — ${fallbackErr.message}. Stopping.` };
+            break;
+          }
+        }
 
-      // Execute tool calls if any
-      if (toolCalls && toolCalls.length > 0) {
+        // ── 2. Parse tool calls (if any) ──────────────────────────────────
+        let toolCalls: ToolCall[] | undefined;
+        if (toolCallAccumulator.size > 0) {
+          toolCalls = Array.from(toolCallAccumulator.values())
+            .filter(tc => tc.name) // Filter out unnamed fragments
+            .map(tc => {
+              let args: any = {};
+              if (tc.argumentsStr) {
+                try { args = JSON.parse(tc.argumentsStr); } catch { args = {}; }
+              }
+              return {
+                id: tc.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                name: tc.name,
+                arguments: args,
+              };
+            });
+          if (toolCalls.length === 0) toolCalls = undefined;
+        }
+
+        // ── 3. No tool calls = final answer, end loop ─────────────────────
+        if (!toolCalls || toolCalls.length === 0) {
+          // Final answer received — break out of ReAct loop
+          if (step > 1) {
+            yield { type: 'thinking', content: `Step ${step}: final answer received after ${step - 1} tool execution round(s).` };
+          }
+          break;
+        }
+
+        // ── 4. Execute tool calls ─────────────────────────────────────────
+        // Push the assistant message (with tool_calls) to message history
+        // so the LLM sees its own request on the next iteration.
+        messages.push({
+          role: 'assistant',
+          content: stepContent || '',
+          toolCalls: toolCalls as any,
+        } as ChatMessage);
+
         const registry = getToolRegistry();
         const toolContext = {
           userId: ctx.userId,
@@ -184,41 +249,50 @@ export class BaseAgent implements IAgent {
           traceId: crypto.randomUUID(),
         };
 
-        // Execute all tool calls and collect results
-        const toolResults: string[] = [];
         for (const tc of toolCalls) {
           yield { type: 'tool_call', toolName: tc.name, args: tc.arguments, toolCallId: tc.id };
-          const result = await registry.execute(tc.name, tc.arguments, toolContext as any);
-          const resultStr = JSON.stringify(result.data || result.error);
-          yield { type: 'tool_result', toolName: tc.name, result: result.data || result.error, durationMs: result.metadata?.durationMs || 0 };
-          toolResults.push(`Tool "${tc.name}" result: ${resultStr}`);
+
+          let result: any;
+          let durationMs = 0;
+          let isError = false;
+          const toolStart = Date.now();
+          try {
+            const toolResult = await registry.execute(tc.name, tc.arguments, toolContext as any);
+            result = toolResult.data ?? toolResult.error;
+            isError = !toolResult.success;
+            durationMs = toolResult.metadata?.durationMs || (Date.now() - toolStart);
+          } catch (err: any) {
+            result = { error: err.message };
+            isError = true;
+            durationMs = Date.now() - toolStart;
+          }
+
+          yield { type: 'tool_result', toolName: tc.name, result, durationMs } as any;
+
+          // ── 5. Feed tool result back via proper role: 'tool' ──────────
+          // Use the OpenAI-standard tool message (with tool_call_id) instead
+          // of the previous user-message hack. The toOpenAIMessages() parser
+          // in base.ts already handles this correctly.
+          const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+          // Truncate very long tool results to avoid blowing context window
+          const truncated = resultStr.length > 4000
+            ? resultStr.slice(0, 4000) + `\n... [truncated, full length ${resultStr.length}]`
+            : resultStr;
+          messages.push({
+            role: 'tool',
+            content: truncated,
+            toolCallId: tc.id,
+          } as any);
         }
 
-        // For follow-up: use user message with tool results instead of tool role
-        // This avoids provider-specific issues (DeepSeek reasoning_content, tool_call_id, etc.)
-        messages.push({
-          role: 'user',
-          content: `I executed the tools you requested. Here are the results:\n\n${toolResults.join('\n\n')}\n\nPlease use these results to answer my original question.`,
-        } as any);
+        // Loop continues — LLM will be called again with the updated messages.
+      }
 
-        // Get follow-up response
-        try {
-          const followUp = await providerManager.chat({
-            modelId, messages,
-            systemPrompt: this.config.systemPrompt,
-            temperature: this.config.temperature,
-            maxTokens: this.config.maxTokens,
-            topP: this.config.topP,
-            // Don't pass tools in follow-up to prevent infinite tool calling loops
-          }, { userId: ctx.userId, sessionId: ctx.sessionId, agentId: this.id });
+      if (this.cancelled) { yield { type: 'cancelled', reason: 'User cancelled' }; return; }
 
-          fullContent += '\n\n' + followUp.content;
-          totalInputTokens += followUp.usage.inputTokens;
-          totalOutputTokens += followUp.usage.outputTokens;
-          yield { type: 'message_chunk', content: '\n\n' + followUp.content };
-        } catch (err: any) {
-          console.warn(`[agent:${this.slug}] Follow-up failed:`, err.message);
-        }
+      // ── Budget check (warn if exceeded) ───────────────────────────────
+      if (step >= maxSteps) {
+        yield { type: 'thinking', content: `Max steps (${maxSteps}) reached — stopping ReAct loop.` };
       }
 
       const durationMs = Date.now() - startTime;
@@ -227,11 +301,28 @@ export class BaseAgent implements IAgent {
       this.metrics.totalTokensUsed += tokensUsed;
       this.metrics.averageDurationMs = (this.metrics.averageDurationMs * (this.metrics.successfulRuns - 1) + durationMs) / this.metrics.successfulRuns;
 
-      const output: AgentOutput = { content: fullContent, toolCalls, metadata: { tokensUsed, cost: 0, durationMs, stepsCompleted: 1 } };
+      const output: AgentOutput = {
+        content: fullContent,
+        toolCalls: undefined, // toolCalls were already streamed as events
+        metadata: {
+          tokensUsed,
+          cost: 0,
+          durationMs,
+          stepsCompleted: step,
+        },
+      };
       yield { type: 'completed', output, tokensUsed, cost: 0 };
     } catch (err: any) {
       this.metrics.failedRuns++;
-      yield { type: 'error', error: { code: err.code || 'AGENT_ERROR', message: err.message, retryable: !err.statusCode || err.statusCode >= 500 }, recoverable: !err.statusCode || err.statusCode >= 500 };
+      yield {
+        type: 'error',
+        error: {
+          code: err.code || 'AGENT_ERROR',
+          message: err.message,
+          retryable: !err.statusCode || err.statusCode >= 500,
+        },
+        recoverable: !err.statusCode || err.statusCode >= 500,
+      };
     }
   }
 

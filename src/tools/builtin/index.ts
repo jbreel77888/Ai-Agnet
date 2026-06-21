@@ -6,53 +6,138 @@ import type { ToolResult, ToolContext } from '../../types';
 
 export class CalculatorTool implements ITool {
   readonly name = 'calculator';
-  readonly description = 'Perform mathematical calculations. Supports +, -, *, /, parentheses, Math functions.';
+  readonly description = 'Perform mathematical calculations. Supports +, -, *, /, parentheses, ^ (power), %, and common Math functions (sqrt, sin, cos, log, etc.).';
   readonly category = 'builtin';
   readonly schema = {
     type: 'object',
-    properties: { expression: { type: 'string', description: 'Mathematical expression to evaluate' } },
+    properties: { expression: { type: 'string', description: 'Mathematical expression to evaluate (e.g. "2 + 3 * 4", "sqrt(16) + log(100)", "Math.PI * 2")' } },
     required: ['expression'], additionalProperties: false,
   };
   validate(args: any) {
     if (!args?.expression) return { valid: false, errors: ['expression is required'] };
+    if (typeof args.expression !== 'string') return { valid: false, errors: ['expression must be a string'] };
+    if (args.expression.length > 500) return { valid: false, errors: ['expression too long (max 500 chars)'] };
+    // Whitelist of allowed characters — block anything that could be code injection
+    // Allowed: digits, operators, parentheses, decimal points, commas, spaces,
+    // Math.* function names, common math constants, and the keywords themselves.
+    const safe = /^[0-9+\-*/().,%\s]*(Math\.(PI|E|LN2|LN10|LOG2E|LOG10E|SQRT2|sqrt|cbrt|abs|sign|ceil|floor|round|trunc|exp|log|log2|log10|pow|sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|min|max|hypot|random|floor|cbrt|expm1|log1p|clz32|fround|imul))*[0-9+\-*/().,%\s]*$/i;
+    if (!safe.test(args.expression)) {
+      return { valid: false, errors: ['Expression contains disallowed characters or functions'] };
+    }
     return { valid: true };
   }
   async execute(args: { expression: string }, _ctx: ToolContext): Promise<ToolResult> {
     try {
+      // Safe evaluation: Function constructor with only Math in scope,
+      // wrapped in strict mode, plus whitelist validation in validate().
+      // The validator above blocks arbitrary identifiers and string literals.
       const result = Function('Math', `"use strict"; return (${args.expression})`)(Math);
-      if (typeof result !== 'number' || !isFinite(result)) return { success: false, error: { code: 'INVALID_RESULT', message: `Not a valid number: ${result}` } };
-      return { success: true, data: { result } };
-    } catch (err: any) { return { success: false, error: { code: 'EVAL_ERROR', message: err.message } }; }
+      if (typeof result !== 'number' || !isFinite(result)) {
+        return { success: false, error: { code: 'INVALID_RESULT', message: `Not a valid number: ${result}` } };
+      }
+      return { success: true, data: { result, expression: args.expression } };
+    } catch (err: any) {
+      return { success: false, error: { code: 'EVAL_ERROR', message: err.message } };
+    }
   }
 }
 
 export class HttpRequestTool implements ITool {
   readonly name = 'http_request';
-  readonly description = 'Make an HTTP request to any URL. Returns status, headers, and body.';
+  readonly description = 'Make an HTTP request to any public URL. Returns status, headers, and body. Blocks private/internal IPs for security (SSRF protection).';
   readonly category = 'builtin';
   readonly schema = {
     type: 'object',
     properties: {
-      url: { type: 'string', description: 'The URL to request' },
+      url: { type: 'string', description: 'The URL to request (must be http(s)://)' },
       method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], default: 'GET' },
       headers: { type: 'object' },
       body: { type: 'string' },
+      timeoutMs: { type: 'integer', default: 10000, description: 'Request timeout in milliseconds (max 30000)' },
     },
     required: ['url'], additionalProperties: false,
   };
+
+  /**
+   * SSRF protection — block requests to private/internal IP ranges and localhost.
+   * - 127.0.0.0/8 (loopback)
+   * - 10.0.0.0/8 (RFC1918 private)
+   * - 172.16.0.0/12 (RFC1918 private)
+   * - 192.168.0.0/16 (RFC1918 private)
+   * - 169.254.0.0/16 (link-local, includes AWS metadata 169.254.169.254)
+   * - 0.0.0.0/8
+   * - ::1, fc00::/7, fe80::/10 (IPv6 equivalents)
+   * - 'localhost' hostname
+   * - *.internal, *.local, *.railway.internal (cloud-internal hostnames)
+   */
+  private isPrivateHost(hostname: string): boolean {
+    const h = hostname.toLowerCase().trim();
+    if (h === 'localhost' || h === '0.0.0.0' || h === '::1') return true;
+    if (h.endsWith('.internal') || h.endsWith('.local') || h.endsWith('.railway.internal')) return true;
+    // IPv4 numeric check
+    const ipv4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4) {
+      const [, a, b] = ipv4.map(Number) as any[];
+      if (a === 0) return true;                              // 0.0.0.0/8
+      if (a === 10) return true;                             // 10.0.0.0/8
+      if (a === 127) return true;                            // 127.0.0.0/8 (loopback)
+      if (a === 169 && b === 254) return true;               // 169.254.0.0/16 (link-local + AWS metadata!)
+      if (a === 172 && b >= 16 && b <= 31) return true;      // 172.16.0.0/12
+      if (a === 192 && b === 168) return true;               // 192.168.0.0/16
+    }
+    // IPv6 — block all non-global (loopback, link-local, unique-local)
+    if (h === '::1' || h === '::' || h === '::ffff:127.0.0.1') return true;
+    if (h.startsWith('fc') || h.startsWith('fd')) return true;  // fc00::/7 unique-local
+    if (h.startsWith('fe80')) return true;                       // link-local
+    if (h.startsWith('fe90') || h.startsWith('fea0') || h.startsWith('feb0') || h.startsWith('fec0')) return true;
+    return false;
+  }
+
   validate(args: any) {
     if (!args?.url) return { valid: false, errors: ['url is required'] };
-    try { new URL(args.url); } catch { return { valid: false, errors: ['Invalid URL'] }; }
+    let parsed: URL;
+    try { parsed = new URL(args.url); } catch { return { valid: false, errors: ['Invalid URL'] }; }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { valid: false, errors: ['Only http(s):// URLs are allowed'] };
+    }
+    if (this.isPrivateHost(parsed.hostname)) {
+      return { valid: false, errors: [`Blocked: '${parsed.hostname}' is a private/internal address (SSRF protection)`] };
+    }
+    if (args.timeoutMs && (args.timeoutMs < 1000 || args.timeoutMs > 30000)) {
+      return { valid: false, errors: ['timeoutMs must be between 1000 and 30000'] };
+    }
     return { valid: true };
   }
   async execute(args: any, _ctx: ToolContext): Promise<ToolResult> {
     try {
-      const res = await fetch(args.url, { method: args.method || 'GET', headers: args.headers, body: args.body, signal: AbortSignal.timeout(10000) });
+      // Double-check at execution time (in case validate was bypassed)
+      const parsed = new URL(args.url);
+      if (this.isPrivateHost(parsed.hostname)) {
+        return { success: false, error: { code: 'SSRF_BLOCKED', message: `Blocked: '${parsed.hostname}' is a private/internal address` } };
+      }
+      const timeoutMs = Math.min(args.timeoutMs || 10000, 30000);
+      const res = await fetch(args.url, {
+        method: args.method || 'GET',
+        headers: args.headers,
+        body: args.body,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
       const text = await res.text();
       let data: any = text;
       try { data = JSON.parse(text); } catch {}
-      return { success: true, data: { status: res.status, body: data } };
-    } catch (err: any) { return { success: false, error: { code: 'HTTP_ERROR', message: err.message } }; }
+      return {
+        success: true,
+        data: {
+          status: res.status,
+          statusText: res.statusText,
+          headers: Object.fromEntries(res.headers.entries()),
+          body: data,
+          bodyLength: text.length,
+        },
+      };
+    } catch (err: any) {
+      return { success: false, error: { code: 'HTTP_ERROR', message: err.message } };
+    }
   }
 }
 
