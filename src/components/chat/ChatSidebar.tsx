@@ -1,11 +1,16 @@
 'use client';
 
 /**
- * ChatSidebar — left-hand panel with:
- *   - Back-to-dashboard link
- *   - Agent picker + "New Chat" button
- *   - Searchable sessions list (most recent first)
- *   - Per-session: agent color dot, title, last-activity timestamp, delete btn
+ * ChatSidebar — minimal dark sidebar (Manus style).
+ *
+ * With the move to a single universal agent, the agent picker has been
+ * removed. The sidebar now provides:
+ *   - Brand mark + back-to-dashboard
+ *   - Prominent "New Chat" button (always uses the universal planner agent)
+ *   - Search field
+ *   - Session list (most recent first) with title + relative timestamp +
+ *     message count badge + delete button on hover
+ *   - Footer with session count
  *   - Mobile-friendly: parent passes `mobileOpen` + `onMobileOpenChange`;
  *     on `lg+` screens the sidebar is a static aside; below that it slides
  *     in as a Sheet.
@@ -15,31 +20,16 @@
 import { useState, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Plus, MessageSquare, Trash2, Search, Bot, X, Sparkles,
+  ArrowLeft, Plus, MessageSquare, Trash2, Search, Sparkles, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { getAgentTypeStyle } from '@/lib/agent-types';
-
-export interface SidebarAgent {
-  id: string;
-  name: string;
-  slug: string;
-  type: string;
-  description?: string | null;
-}
 
 export interface SidebarSession {
   id: string;
-  agentName: string;
-  agentSlug?: string;
-  agentType?: string;
   title: string;
   status: string;
   lastActivityAt: string;
@@ -48,12 +38,9 @@ export interface SidebarSession {
 }
 
 interface ChatSidebarProps {
-  agents: SidebarAgent[];
   sessions: SidebarSession[];
-  selectedAgent: string;
   currentSessionId: string | null;
   loading?: boolean;
-  onSelectAgent: (slug: string) => void;
   onCreateSession: () => void;
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
@@ -87,8 +74,8 @@ interface SidebarBodyProps extends Omit<ChatSidebarProps, 'mobileOpen' | 'onMobi
 }
 
 function SidebarBody({
-  agents, sessions, selectedAgent, currentSessionId, loading,
-  onSelectAgent, onCreateSession, onSelectSession, onDeleteSession,
+  sessions, currentSessionId, loading,
+  onCreateSession, onSelectSession, onDeleteSession,
   query, setQuery, onNavigate,
 }: SidebarBodyProps) {
   const router = useRouter();
@@ -97,8 +84,7 @@ function SidebarBody({
     if (!query.trim()) return sessions;
     const q = query.toLowerCase();
     return sessions.filter(s =>
-      s.title.toLowerCase().includes(q) ||
-      (s.agentName || '').toLowerCase().includes(q)
+      s.title.toLowerCase().includes(q)
     );
   }, [sessions, query]);
 
@@ -112,9 +98,12 @@ function SidebarBody({
       <div className="px-4 pt-4 pb-3 border-b border-slate-800">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-7 h-7 rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-            <Bot className="w-4 h-4 text-white" />
+            <Sparkles className="w-4 h-4 text-white" />
           </div>
-          <span className="text-sm font-semibold">Agent Chat</span>
+          <span className="text-sm font-semibold tracking-tight">Agent</span>
+          <Badge variant="secondary" className="ml-auto text-[9.5px] h-4 px-1.5 bg-slate-800 text-slate-400 border-slate-700">
+            universal
+          </Badge>
         </div>
         <Button
           variant="ghost"
@@ -127,43 +116,20 @@ function SidebarBody({
         </Button>
       </div>
 
-      {/* New chat section */}
+      {/* New chat button — single universal agent */}
       <div className="px-4 py-3 border-b border-slate-800 space-y-2">
-        <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">
-          New Session
-        </label>
-        <Select value={selectedAgent} onValueChange={onSelectAgent}>
-          <SelectTrigger className="bg-slate-900 border-slate-700 text-slate-100">
-            <SelectValue placeholder="Select agent…" />
-          </SelectTrigger>
-          <SelectContent>
-            {agents.length === 0 ? (
-              <SelectItem value="_none" disabled>No agents available</SelectItem>
-            ) : (
-              agents.map(a => (
-                <SelectItem key={a.slug} value={a.slug}>
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ background: getAgentTypeStyle(a.type).hex }}
-                    />
-                    {a.name}
-                    <span className="text-[10px] text-muted-foreground uppercase">{a.type}</span>
-                  </span>
-                </SelectItem>
-              ))
-            )}
-          </SelectContent>
-        </Select>
         <Button
           onClick={handleCreate}
-          disabled={!selectedAgent || selectedAgent === '_none' || loading}
-          className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white"
+          disabled={loading}
+          className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-sm"
           size="sm"
         >
           <Plus className="w-3.5 h-3.5 mr-1.5" />
           New Chat
         </Button>
+        <p className="text-[10.5px] text-slate-500 leading-relaxed">
+          The agent auto-selects the right tools and strategy based on your request.
+        </p>
       </div>
 
       {/* Search */}
@@ -199,13 +165,12 @@ function SidebarBody({
               </p>
               {!query && (
                 <p className="text-[10px] text-slate-600 mt-1">
-                  Pick an agent above to start
+                  Click "New Chat" to begin
                 </p>
               )}
             </div>
           ) : (
             filteredSessions.map(s => {
-              const style = getAgentTypeStyle(s.agentType);
               const isActive = currentSessionId === s.id;
               return (
                 <div
@@ -217,21 +182,12 @@ function SidebarBody({
                       : 'hover:bg-slate-900'
                   }`}
                 >
-                  <span
-                    className="mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0"
-                    style={{ background: style.hex }}
-                    aria-hidden
-                  />
                   <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
                   <div className="flex-1 min-w-0">
                     <p className={`text-[12px] truncate ${isActive ? 'text-white font-medium' : 'text-slate-200'}`}>
                       {s.title}
                     </p>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] text-slate-500 truncate">
-                        {s.agentName}
-                      </span>
-                      <span className="text-slate-700">·</span>
                       <span className="text-[10px] text-slate-500 flex-shrink-0">
                         {relativeTime(s.lastActivityAt)}
                       </span>
@@ -290,3 +246,5 @@ export function ChatSidebar(props: ChatSidebarProps): ReactNode {
     </>
   );
 }
+
+export default ChatSidebar;
