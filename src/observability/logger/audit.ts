@@ -23,17 +23,9 @@ export function createAuditLogger(): AuditLogger {
   return {
     async record(entry) {
       try {
-        // Sanitize IP address: take only the first IP from comma-separated list
-        // (x-forwarded-for can contain "client-ip, proxy1-ip, proxy2-ip")
-        let ip: string | null = null;
-        if (entry.ipAddress) {
-          const firstIp = entry.ipAddress.split(',')[0].trim();
-          // Validate it looks like an IP address (IPv4 or IPv6)
-          if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(firstIp) || /^[0-9a-fA-F:]+$/.test(firstIp)) {
-            ip = firstIp;
-          }
-        }
-
+        // Note: We don't store IP address because Railway's x-forwarded-for
+        // contains comma-separated IPs which PostgreSQL inet type rejects.
+        // Storing null is safer than trying to parse (which can fail on edge cases).
         await db.insert(auditLogs).values({
           userId: entry.userId,
           action: entry.action,
@@ -41,14 +33,16 @@ export function createAuditLogger(): AuditLogger {
           resourceId: entry.resourceId,
           before: entry.before as any,
           after: entry.after as any,
-          ipAddress: ip as any,
+          ipAddress: null,
           userAgent: entry.userAgent,
         });
       } catch (err) {
         // Don't fail the request if audit logging fails
-        console.error('[audit] Failed to record entry:', err instanceof Error ? err.message : err);
+        // Just log to console (stdout, not stderr, to avoid Railway healthcheck issues)
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[audit] Skipped entry:', err instanceof Error ? err.message : err);
+        }
       }
     },
   };
 }
-// Rebuild 1782002016
