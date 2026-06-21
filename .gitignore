@@ -52,3 +52,21 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Embedded PostgreSQL data (auto-generated)
+/data/
+/storage/
+/.local/
+
+# Build artifacts
+/dist/
+/tmp/
+
+# Railway
+railway.json.local
+
+# Drizzle
+drizzle.config.local.json
+
+# OS
+Thumbs.db

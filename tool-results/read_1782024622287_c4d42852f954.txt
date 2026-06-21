@@ -1,0 +1,1010 @@
+     1→'use client';
+     2→
+     3→/**
+     4→ * Manus-style Chat Page
+     5→ * ──────────────────────
+     6→ * Full chat experience:
+     7→ *   - Dark sidebar with sessions + agent picker
+     8→ *   - Streaming SSE messages with thinking process, tool calls, artifacts
+     9→ *   - Stop / regenerate, copy message, auto-scroll
+    10→ *   - Markdown rendering with syntax highlighting
+    11→ *   - Mobile-responsive (sidebar collapses to sheet)
+    12→ *
+    13→ * Backend endpoints (already implemented):
+    14→ *   GET    /api/agents
+    15→ *   GET    /api/sessions
+    16→ *   POST   /api/sessions
+    17→ *   GET    /api/sessions/[id]
+    18→ *   DELETE /api/sessions/[id]
+    19→ *   POST   /api/sessions/[id]/messages   (SSE)
+    20→ */
+    21→import {
+    22→  useState, useEffect, useRef, useCallback, useMemo, type KeyboardEvent,
+    23→} from 'react';
+    24→import { useRouter } from 'next/navigation';
+    25→import {
+    26→  Send, Square, Bot, Sparkles, AlertTriangle, Trash2,
+    27→  RefreshCw, Menu, Activity, Cpu, Coins, Clock,
+    28→} from 'lucide-react';
+    29→import { Button } from '@/components/ui/button';
+    30→import { Textarea } from '@/components/ui/textarea';
+    31→import {
+    32→  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+    33→} from '@/components/ui/tooltip';
+    34→import {
+    35→  ChatSidebar,
+    36→  type SidebarAgent,
+    37→  type SidebarSession,
+    38→} from '@/components/chat/ChatSidebar';
+    39→import {
+    40→  MessageBubble,
+    41→  type ChatMessageData,
+    42→} from '@/components/chat/MessageBubble';
+    43→import type { ThinkingStep } from '@/components/chat/ThinkingProcess';
+    44→import type { ToolCallData } from '@/components/chat/ToolCallCard';
+    45→import { getAgentTypeStyle } from '@/lib/agent-types';
+    46→
+    47→// ─────────────────────────────────────────────────────────────────────────────
+    48→// Types — SSE event payloads from POST /api/sessions/[id]/messages
+    49→// ─────────────────────────────────────────────────────────────────────────────
+    50→type SSEEvent =
+    51→  | { type: 'started'; agentId: string; input: { task: string } }
+    52→  | { type: 'thinking'; content: string }
+    53→  | { type: 'message_chunk'; content: string }
+    54→  | { type: 'tool_call'; toolName: string; args: unknown; toolCallId: string }
+    55→  | { type: 'tool_result'; toolName: string; result: unknown; durationMs: number }
+    56→  | { type: 'handoff_request'; target: string; reason: string }
+    57→  | { type: 'subagent_spawned'; subAgentId: string; agentType: string }
+    58→  | { type: 'error'; error: { code: string; message: string; retryable?: boolean }; recoverable: boolean }
+    59→  | { type: 'completed'; output: { content: string; metadata?: { tokensUsed: number; cost: number; durationMs: number } }; tokensUsed: number; cost: number }
+    60→  | { type: 'cancelled'; reason: string }
+    61→  | { type: 'message_saved'; messageId: string };
+    62→
+    63→interface ApiAgent {
+    64→  id: string; name: string; slug: string; type: string;
+    65→  description?: string | null;
+    66→  systemPrompt?: string;
+    67→}
+    68→
+    69→interface ApiSession {
+    70→  id: string;
+    71→  agentId: string;
+    72→  agentSlug?: string;
+    73→  agentName: string;
+    74→  title: string;
+    75→  status: string;
+    76→  totalTokens: number;
+    77→  totalCost: string;
+    78→  startedAt: string;
+    79→  lastActivityAt: string;
+    80→  messageCount: number;
+    81→}
+    82→
+    83→interface ApiMessage {
+    84→  id: string;
+    85→  role: string;
+    86→  content: string;
+    87→  createdAt: string;
+    88→  modelId?: string;
+    89→  tokensInput?: number;
+    90→  tokensOutput?: number;
+    91→  cost?: string;
+    92→  latencyMs?: number;
+    93→}
+    94→
+    95→// ─────────────────────────────────────────────────────────────────────────────
+    96→// Helpers
+    97→// ─────────────────────────────────────────────────────────────────────────────
+    98→let stepCounter = 0;
+    99→function newStepId(): string {
+   100→  stepCounter += 1;
+   101→  return `step-${Date.now()}-${stepCounter}`;
+   102→}
+   103→
+   104→/** Convert an API message (loaded from DB) to our ChatMessageData shape. */
+   105→function apiMessageToChatMessage(
+   106→  m: ApiMessage,
+   107→  agentType?: string,
+   108→  agentName?: string,
+   109→): ChatMessageData {
+   110→  const role: ChatMessageData['role'] =
+   111→    m.role === 'user' ? 'user' :
+   112→    m.role === 'assistant' ? 'assistant' :
+   113→    m.role === 'system' ? 'system' : 'system';
+   114→  const tokensUsed = (m.tokensInput || 0) + (m.tokensOutput || 0);
+   115→  return {
+   116→    id: m.id,
+   117→    role,
+   118→    content: m.content || '',
+   119→    createdAt: m.createdAt,
+   120→    agentType,
+   121→    agentName,
+   122→    isStreaming: false,
+   123→    metadata: role === 'assistant' && (tokensUsed || m.cost || m.latencyMs) ? {
+   124→      tokensUsed: tokensUsed || undefined,
+   125→      cost: m.cost ? parseFloat(m.cost) : undefined,
+   126→      durationMs: m.latencyMs,
+   127→    } : undefined,
+   128→  };
+   129→}
+   130→
+   131→function formatTotalCost(s: string | number): string {
+   132→  const n = typeof s === 'number' ? s : parseFloat(s);
+   133→  if (!isFinite(n) || n === 0) return '$0.00';
+   134→  if (n < 0.01) return `$${n.toFixed(5)}`;
+   135→  return `$${n.toFixed(4)}`;
+   136→}
+   137→
+   138→function formatTokens(n: number): string {
+   139→  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+   140→  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+   141→  return String(n);
+   142→}
+   143→
+   144→// ─────────────────────────────────────────────────────────────────────────────
+   145→// Empty state component
+   146→// ─────────────────────────────────────────────────────────────────────────────
+   147→function EmptyChatState({ onSuggest, agentName }: { onSuggest: (s: string) => void; agentName?: string }) {
+   148→  const suggestions = [
+   149→    'Explain how AI agents work',
+   150→    'Write a Python function to fetch and parse JSON',
+   151→    'Research the latest news about LLMs',
+   152→    'Help me plan a 3-day trip to Tokyo',
+   153→  ];
+   154→  return (
+   155→    <div className="h-full flex flex-col items-center justify-center text-center px-6 py-12">
+   156→      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg mb-4">
+   157→        <Sparkles className="w-8 h-8" />
+   158→      </div>
+   159→      <h2 className="text-xl font-bold mb-1">
+   160→        {agentName ? `Chat with ${agentName}` : 'Start a new conversation'}
+   161→      </h2>
+   162→      <p className="text-sm text-muted-foreground mb-6 max-w-md">
+   163→        Send a message and watch the agent think, use tools, and produce artifacts in real time.
+   164→      </p>
+   165→      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-xl">
+   166→        {suggestions.map(s => (
+   167→          <button
+   168→            key={s}
+   169→            onClick={() => onSuggest(s)}
+   170→            className="text-left px-4 py-3 rounded-lg border bg-card hover:bg-accent hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors text-[13px] text-foreground/80 hover:text-foreground"
+   171→          >
+   172→            {s}
+   173→          </button>
+   174→        ))}
+   175→      </div>
+   176→    </div>
+   177→  );
+   178→}
+   179→
+   180→// ─────────────────────────────────────────────────────────────────────────────
+   181→// Main page
+   182→// ─────────────────────────────────────────────────────────────────────────────
+   183→export default function ChatPage() {
+   184→  const router = useRouter();
+   185→
+   186→  // ── State ──────────────────────────────────────────────────────────────────
+   187→  const [agents, setAgents] = useState<SidebarAgent[]>([]);
+   188→  const [sessions, setSessions] = useState<SidebarSession[]>([]);
+   189→  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+   190→  const [currentSessionMeta, setCurrentSessionMeta] = useState<ApiSession | null>(null);
+   191→  const [messages, setMessages] = useState<ChatMessageData[]>([]);
+   192→  const [input, setInput] = useState('');
+   193→  const [loadingData, setLoadingData] = useState(true);
+   194→  const [sending, setSending] = useState(false);
+   195→  const [error, setError] = useState<string | null>(null);
+   196→  const [selectedAgent, setSelectedAgent] = useState<string>('');
+   197→  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+   198→
+   199→  // ── Refs ───────────────────────────────────────────────────────────────────
+   200→  const abortRef = useRef<AbortController | null>(null);
+   201→  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+   202→  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+   203→  const autoScrollRef = useRef(true);
+   204→  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+   205→  const currentAssistantIdRef = useRef<string | null>(null);
+   206→  const sessionMetaRef = useRef<ApiSession | null>(null);
+   207→  sessionMetaRef.current = currentSessionMeta;
+   208→
+   209→  // ── Auth check + initial data ──────────────────────────────────────────────
+   210→  useEffect(() => {
+   211→    const token = localStorage.getItem('accessToken');
+   212→    if (!token) { router.push('/login'); return; }
+   213→    Promise.all([
+   214→      fetch('/api/agents', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+   215→      fetch('/api/sessions', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+   216→    ]).then(([agentsData, sessionsData]) => {
+   217→      if (agentsData.success) {
+   218→        const mapped: SidebarAgent[] = (agentsData.data.agents || []).map((a: ApiAgent) => ({
+   219→          id: a.id, name: a.name, slug: a.slug, type: a.type, description: a.description,
+   220→        }));
+   221→        setAgents(mapped);
+   222→        if (mapped.length > 0) {
+   223→          // Use functional update so we don't need `selectedAgent` in deps
+   224→          setSelectedAgent(prev => prev || mapped[0].slug);
+   225→        }
+   226→      }
+   227→      if (sessionsData.success) {
+   228→        const mapped: SidebarSession[] = (sessionsData.data.sessions || []).map((s: ApiSession) => ({
+   229→          id: s.id,
+   230→          agentName: s.agentName,
+   231→          agentSlug: s.agentSlug,
+   232→          title: s.title || 'Untitled',
+   233→          status: s.status,
+   234→          lastActivityAt: s.lastActivityAt,
+   235→          messageCount: s.messageCount,
+   236→          totalTokens: s.totalTokens,
+   237→        }));
+   238→        setSessions(mapped);
+   239→      }
+   240→    }).catch((err) => {
+   241→      console.error('Failed to load chat data:', err);
+   242→      setError('Failed to load data. Please refresh.');
+   243→    }).finally(() => setLoadingData(false));
+   244→  }, [router]);
+   245→
+   246→  // ── Auto-scroll behavior ───────────────────────────────────────────────────
+   247→  const scrollToBottom = useCallback((smooth = true) => {
+   248→    messagesEndRef.current?.scrollIntoView({
+   249→      behavior: smooth ? 'smooth' : 'auto',
+   250→      block: 'end',
+   251→    });
+   252→  }, []);
+   253→
+   254→  useEffect(() => {
+   255→    if (autoScrollRef.current) {
+   256→      scrollToBottom();
+   257→    }
+   258→  }, [messages, scrollToBottom]);
+   259→
+   260→  const handleScroll = useCallback(() => {
+   261→    const el = scrollContainerRef.current;
+   262→    if (!el) return;
+   263→    const threshold = 80; // px from bottom
+   264→    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+   265→    autoScrollRef.current = distanceFromBottom < threshold;
+   266→  }, []);
+   267→
+   268→  // ── Auto-grow textarea ─────────────────────────────────────────────────────
+   269→  useEffect(() => {
+   270→    const ta = textareaRef.current;
+   271→    if (!ta) return;
+   272→    ta.style.height = 'auto';
+   273→    ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+   274→  }, [input]);
+   275→
+   276→  // ── Helper: refresh sessions list ──────────────────────────────────────────
+   277→  const refreshSessions = useCallback(async () => {
+   278→    const token = localStorage.getItem('accessToken');
+   279→    if (!token) return;
+   280→    try {
+   281→      const res = await fetch('/api/sessions', { headers: { Authorization: `Bearer ${token}` } });
+   282→      const data = await res.json();
+   283→      if (data.success) {
+   284→        const mapped: SidebarSession[] = (data.data.sessions || []).map((s: ApiSession) => ({
+   285→          id: s.id,
+   286→          agentName: s.agentName,
+   287→          agentSlug: s.agentSlug,
+   288→          title: s.title || 'Untitled',
+   289→          status: s.status,
+   290→          lastActivityAt: s.lastActivityAt,
+   291→          messageCount: s.messageCount,
+   292→          totalTokens: s.totalTokens,
+   293→        }));
+   294→        setSessions(mapped);
+   295→      }
+   296→    } catch (err) { console.error(err); }
+   297→  }, []);
+   298→
+   299→  // ── Load session ───────────────────────────────────────────────────────────
+   300→  const loadSession = useCallback(async (sessionId: string) => {
+   301→    const token = localStorage.getItem('accessToken');
+   302→    if (!token) { router.push('/login'); return; }
+   303→    setError(null);
+   304→    try {
+   305→      const res = await fetch(`/api/sessions/${sessionId}`, {
+   306→        headers: { Authorization: `Bearer ${token}` },
+   307→      });
+   308→      const data = await res.json();
+   309→      if (data.success) {
+   310→        const session: ApiSession = data.data.session;
+   311→        const apiMsgs: ApiMessage[] = data.data.messages || [];
+   312→        // Find agent type for color coding
+   313→        const agent = agents.find(a => a.id === session.agentId);
+   314→        const agentType = agent?.type;
+   315→        const agentName = agent?.name || session.agentName;
+   316→        const mapped: ChatMessageData[] = apiMsgs.map(m =>
+   317→          apiMessageToChatMessage(m, agentType, agentName)
+   318→        );
+   319→        setCurrentSessionId(sessionId);
+   320→        setCurrentSessionMeta(session);
+   321→        setMessages(mapped);
+   322→        autoScrollRef.current = true;
+   323→        // Wait a tick then scroll
+   324→        setTimeout(() => scrollToBottom(false), 50);
+   325→      } else if (res.status === 401) {
+   326→        router.push('/login');
+   327→      } else {
+   328→        setError(data.error?.message || 'Failed to load session');
+   329→      }
+   330→    } catch (err: any) {
+   331→      setError(err.message || 'Failed to load session');
+   332→    }
+   333→  }, [agents, router, scrollToBottom]);
+   334→
+   335→  // ── Create session ────────────────────────────────────────────────────────
+   336→  const createSession = useCallback(async () => {
+   337→    const token = localStorage.getItem('accessToken');
+   338→    if (!token || !selectedAgent || selectedAgent === '_none') return;
+   339→    setError(null);
+   340→    try {
+   341→      const res = await fetch('/api/sessions', {
+   342→        method: 'POST',
+   343→        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+   344→        body: JSON.stringify({ agentSlug: selectedAgent }),
+   345→      });
+   346→      const data = await res.json();
+   347→      if (data.success) {
+   348→        await refreshSessions();
+   349→        await loadSession(data.data.sessionId);
+   350→      } else {
+   351→        setError(data.error?.message || 'Failed to create session');
+   352→      }
+   353→    } catch (err: any) {
+   354→      setError(err.message || 'Failed to create session');
+   355→    }
+   356→  }, [selectedAgent, refreshSessions, loadSession]);
+   357→
+   358→  // ── Delete session ─────────────────────────────────────────────────────────
+   359→  const deleteSession = useCallback(async (sessionId: string) => {
+   360→    if (!confirm('Delete this chat session? This cannot be undone.')) return;
+   361→    const token = localStorage.getItem('accessToken');
+   362→    if (!token) return;
+   363→    try {
+   364→      await fetch(`/api/sessions/${sessionId}`, {
+   365→        method: 'DELETE',
+   366→        headers: { Authorization: `Bearer ${token}` },
+   367→      });
+   368→      if (currentSessionId === sessionId) {
+   369→        setCurrentSessionId(null);
+   370→        setCurrentSessionMeta(null);
+   371→        setMessages([]);
+   372→      }
+   373→      await refreshSessions();
+   374→    } catch (err) { console.error(err); }
+   375→  }, [currentSessionId, refreshSessions]);
+   376→
+   377→  // ── Send message (SSE streaming) ───────────────────────────────────────────
+   378→  const sendMessage = useCallback(async (text?: string) => {
+   379→    const content = (text ?? input).trim();
+   380→    if (!content || !currentSessionId || sending) return;
+   381→
+   382→    const token = localStorage.getItem('accessToken');
+   383→    if (!token) { router.push('/login'); return; }
+   384→
+   385→    setError(null);
+   386→    setInput('');
+   387→    autoScrollRef.current = true;
+   388→
+   389→    // Push user message immediately
+   390→    const userMsg: ChatMessageData = {
+   391→      id: `u-${Date.now()}`,
+   392→      role: 'user',
+   393→      content,
+   394→      createdAt: new Date().toISOString(),
+   395→    };
+   396→
+   397→    // Push placeholder assistant message
+   398→    const assistantId = `a-${Date.now()}`;
+   399→    currentAssistantIdRef.current = assistantId;
+   400→    const session = sessionMetaRef.current;
+   401→    const agent = agents.find(a => a.id === session?.agentId);
+   402→    const agentType = agent?.type;
+   403→    const agentName = agent?.name || session?.agentName;
+   404→
+   405→    const assistantMsg: ChatMessageData = {
+   406→      id: assistantId,
+   407→      role: 'assistant',
+   408→      content: '',
+   409→      createdAt: new Date().toISOString(),
+   410→      agentType,
+   411→      agentName,
+   412→      isStreaming: true,
+   413→      thinkingSteps: [{
+   414→        id: newStepId(),
+   415→        kind: 'analyzing',
+   416→        label: 'Analyzing request',
+   417→        status: 'running',
+   418→        ts: Date.now(),
+   419→      }],
+   420→      toolCalls: [],
+   421→      artifacts: [],
+   422→    };
+   423→
+   424→    setMessages(prev => [...prev, userMsg, assistantMsg]);
+   425→    setSending(true);
+   426→
+   427→    abortRef.current = new AbortController();
+   428→
+   429→    // Helper to update the assistant message immutably
+   430→    const updateAssistant = (updater: (m: ChatMessageData) => ChatMessageData) => {
+   431→      setMessages(prev => prev.map(m =>
+   432→        m.id === assistantId ? updater(m) : m
+   433→      ));
+   434→    };
+   435→
+   436→    try {
+   437→      const res = await fetch(`/api/sessions/${currentSessionId}/messages`, {
+   438→        method: 'POST',
+   439→        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+   440→        body: JSON.stringify({ content }),
+   441→        signal: abortRef.current.signal,
+   442→      });
+   443→
+   444→      if (!res.ok) {
+   445→        const errData = await res.json().catch(() => ({}));
+   446→        throw new Error(errData?.error?.message || `HTTP ${res.status}`);
+   447→      }
+   448→      if (!res.body) throw new Error('No response stream');
+   449→
+   450→      const reader = res.body.getReader();
+   451→      const decoder = new TextDecoder();
+   452→      let buffer = '';
+   453→      let accumulatedContent = '';
+   454→      let startedAt = Date.now();
+   455→
+   456→      const finishRunningSteps = (steps: ThinkingStep[]): ThinkingStep[] =>
+   457→        steps.map(s => s.status === 'running' ? { ...s, status: 'completed' as const } : s);
+   458→
+   459→      while (true) {
+   460→        const { done, value } = await reader.read();
+   461→        if (done) break;
+   462→        buffer += decoder.decode(value, { stream: true });
+   463→
+   464→        // SSE messages are separated by double newlines; lines start with "data: "
+   465→        const lines = buffer.split('\n');
+   466→        buffer = lines.pop() || ''; // keep last partial line
+   467→
+   468→        for (const rawLine of lines) {
+   469→          const line = rawLine.trim();
+   470→          if (!line.startsWith('data:')) continue;
+   471→          const payload = line.slice(5).trim();
+   472→          if (payload === '[DONE]') continue;
+   473→          if (!payload) continue;
+   474→
+   475→          let event: SSEEvent;
+   476→          try {
+   477→            event = JSON.parse(payload);
+   478→          } catch {
+   479→            continue;
+   480→          }
+   481→
+   482→          switch (event.type) {
+   483→            case 'started': {
+   484→              startedAt = Date.now();
+   485→              updateAssistant(m => ({
+   486→                ...m,
+   487→                thinkingSteps: m.thinkingSteps?.map(s =>
+   488→                  s.kind === 'analyzing' && s.status === 'running'
+   489→                    ? { ...s, status: 'running', label: 'Analyzing request' }
+   490→                    : s
+   491→                ) ?? [],
+   492→              }));
+   493→              break;
+   494→            }
+   495→            case 'thinking': {
+   496→              updateAssistant(m => ({
+   497→                ...m,
+   498→                thinkingSteps: [
+   499→                  ...(m.thinkingSteps ?? []),
+   500→                  {
+   501→                    id: newStepId(),
+   502→                    kind: 'info',
+   503→                    label: 'Thinking',
+   504→                    detail: event.content.slice(0, 100),
+   505→                    status: 'completed',
+   506→                    ts: Date.now(),
+   507→                  },
+   508→                ],
+   509→              }));
+   510→              break;
+   511→            }
+   512→            case 'message_chunk': {
+   513→              accumulatedContent += event.content;
+   514→              updateAssistant(m => {
+   515→                let steps = m.thinkingSteps ?? [];
+   516→                // Complete any 'analyzing' step, ensure a 'synthesizing' step exists
+   517→                steps = steps.map(s => s.status === 'running' && s.kind === 'analyzing'
+   518→                  ? { ...s, status: 'completed' as const, durationMs: Date.now() - startedAt }
+   519→                  : s
+   520→                );
+   521→                if (!steps.some(s => s.kind === 'synthesizing')) {
+   522→                  steps = [...steps, {
+   523→                    id: newStepId(), kind: 'synthesizing',
+   524→                    label: 'Synthesizing response',
+   525→                    status: 'running', ts: Date.now(),
+   526→                  }];
+   527→                }
+   528→                return { ...m, content: accumulatedContent, thinkingSteps: steps };
+   529→              });
+   530→              break;
+   531→            }
+   532→            case 'tool_call': {
+   533→              updateAssistant(m => {
+   534→                let steps = m.thinkingSteps ?? [];
+   535→                // Complete any running 'synthesizing' step
+   536→                steps = steps.map(s => s.status === 'running' && s.kind === 'synthesizing'
+   537→                  ? { ...s, status: 'completed' as const }
+   538→                  : s
+   539→                );
+   540→                // Add a 'tool' thinking step
+   541→                steps = [...steps, {
+   542→                  id: newStepId(),
+   543→                  kind: 'tool',
+   544→                  label: `Running ${event.toolName}`,
+   545→                  status: 'running',
+   546→                  ts: Date.now(),
+   547→                }];
+   548→                // Add tool call card (running)
+   549→                const newTool: ToolCallData = {
+   550→                  id: event.toolCallId || `tc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+   551→                  toolName: event.toolName,
+   552→                  args: event.args,
+   553→                  status: 'running',
+   554→                };
+   555→                return {
+   556→                  ...m,
+   557→                  thinkingSteps: steps,
+   558→                  toolCalls: [...(m.toolCalls ?? []), newTool],
+   559→                };
+   560→              });
+   561→              break;
+   562→            }
+   563→            case 'tool_result': {
+   564→              updateAssistant(m => {
+   565→                let steps = m.thinkingSteps ?? [];
+   566→                // Complete the matching 'tool' step
+   567→                steps = steps.map(s => {
+   568→                  if (s.status === 'running' && s.kind === 'tool' &&
+   569→                      s.label === `Running ${event.toolName}`) {
+   570→                    return { ...s, status: 'completed' as const, durationMs: event.durationMs };
+   571→                  }
+   572→                  return s;
+   573→                });
+   574→                // Re-open 'synthesizing' step if none running
+   575→                if (!steps.some(s => s.status === 'running' && s.kind === 'synthesizing')) {
+   576→                  steps = [...steps, {
+   577→                    id: newStepId(), kind: 'synthesizing',
+   578→                    label: 'Synthesizing response',
+   579→                    status: 'running', ts: Date.now(),
+   580→                  }];
+   581→                }
+   582→                // Update matching tool call with result
+   583→                const toolCalls = (m.toolCalls ?? []).map(tc => {
+   584→                  // Match by name AND status running (the most recent matching one)
+   585→                  if (tc.toolName === event.toolName && tc.status === 'running') {
+   586→                    return {
+   587→                      ...tc,
+   588→                      result: event.result,
+   589→                      durationMs: event.durationMs,
+   590→                      status: 'success' as const,
+   591→                    };
+   592→                  }
+   593→                  return tc;
+   594→                });
+   595→                return { ...m, thinkingSteps: steps, toolCalls };
+   596→              });
+   597→              break;
+   598→            }
+   599→            case 'handoff_request': {
+   600→              updateAssistant(m => ({
+   601→                ...m,
+   602→                thinkingSteps: [
+   603→                  ...(m.thinkingSteps ?? []),
+   604→                  {
+   605→                    id: newStepId(), kind: 'info',
+   606→                    label: `Handing off to ${event.target}`,
+   607→                    detail: event.reason,
+   608→                    status: 'completed', ts: Date.now(),
+   609→                  },
+   610→                ],
+   611→              }));
+   612→              break;
+   613→            }
+   614→            case 'subagent_spawned': {
+   615→              updateAssistant(m => ({
+   616→                ...m,
+   617→                thinkingSteps: [
+   618→                  ...(m.thinkingSteps ?? []),
+   619→                  {
+   620→                    id: newStepId(), kind: 'analyzing',
+   621→                    label: `Spawned ${event.agentType} subagent`,
+   622→                    status: 'completed', ts: Date.now(),
+   623→                  },
+   624→                ],
+   625→              }));
+   626→              break;
+   627→            }
+   628→            case 'completed': {
+   629→              const totalDuration = Date.now() - startedAt;
+   630→              updateAssistant(m => ({
+   631→                ...m,
+   632→                isStreaming: false,
+   633→                content: m.content || event.output?.content || accumulatedContent,
+   634→                thinkingSteps: finishRunningSteps(m.thinkingSteps ?? []),
+   635→                metadata: {
+   636→                  tokensUsed: event.tokensUsed || event.output?.metadata?.tokensUsed,
+   637→                  cost: event.cost ?? event.output?.metadata?.cost,
+   638→                  durationMs: event.output?.metadata?.durationMs ?? totalDuration,
+   639→                },
+   640→              }));
+   641→              break;
+   642→            }
+   643→            case 'error': {
+   644→              const errMsg = event.error?.message || 'Agent error';
+   645→              updateAssistant(m => ({
+   646→                ...m,
+   647→                isStreaming: false,
+   648→                isError: true,
+   649→                content: m.content
+   650→                  ? m.content + `\n\n⚠️ **Error:** ${errMsg}`
+   651→                  : `⚠️ **Error:** ${errMsg}`,
+   652→                thinkingSteps: m.thinkingSteps?.map(s =>
+   653→                  s.status === 'running'
+   654→                    ? { ...s, status: 'failed' as const }
+   655→                    : s
+   656→                ) ?? [],
+   657→              }));
+   658→              setError(errMsg);
+   659→              break;
+   660→            }
+   661→            case 'cancelled': {
+   662→              updateAssistant(m => ({
+   663→                ...m,
+   664→                isStreaming: false,
+   665→                content: m.content + '\n\n_(cancelled)_',
+   666→                thinkingSteps: m.thinkingSteps?.map(s =>
+   667→                  s.status === 'running'
+   668→                    ? { ...s, status: 'failed' as const, detail: 'cancelled' }
+   669→                    : s
+   670→                ) ?? [],
+   671→              }));
+   672→              break;
+   673→            }
+   674→            case 'message_saved': {
+   675→              // Replace temp id with real DB id
+   676→              setMessages(prev => prev.map(m =>
+   677→                m.id === assistantId ? { ...m, id: event.messageId } : m
+   678→              ));
+   679→              currentAssistantIdRef.current = event.messageId;
+   680→              // Refresh sessions to update lastActivityAt + counts
+   681→              refreshSessions();
+   682→              break;
+   683→            }
+   684→          }
+   685→        }
+   686→      }
+   687→
+   688→      // If no content arrived, show a fallback
+   689→      updateAssistant(m => {
+   690→        if (m.content || m.toolCalls?.length || m.artifacts?.length) return m;
+   691→        return { ...m, content: '_(No response received)_', isStreaming: false };
+   692→      });
+   693→    } catch (err: any) {
+   694→      if (err.name === 'AbortError') {
+   695→        updateAssistant(m => ({
+   696→          ...m,
+   697→          isStreaming: false,
+   698→          content: (m.content || '') + '\n\n_(stopped by user)_',
+   699→          thinkingSteps: m.thinkingSteps?.map(s =>
+   700→            s.status === 'running'
+   701→              ? { ...s, status: 'failed' as const, detail: 'stopped' }
+   702→              : s
+   703→          ) ?? [],
+   704→        }));
+   705→      } else {
+   706→        const msg = err.message || 'Network error';
+   707→        updateAssistant(m => ({
+   708→          ...m,
+   709→          isStreaming: false,
+   710→          isError: true,
+   711→          content: m.content
+   712→            ? m.content + `\n\n⚠️ **Error:** ${msg}`
+   713→            : `⚠️ **Error:** ${msg}`,
+   714→        }));
+   715→        setError(msg);
+   716→      }
+   717→    } finally {
+   718→      setSending(false);
+   719→      abortRef.current = null;
+   720→      currentAssistantIdRef.current = null;
+   721→    }
+   722→  }, [input, currentSessionId, sending, agents, router, refreshSessions]);
+   723→
+   724→  // ── Stop generation ────────────────────────────────────────────────────────
+   725→  const handleStop = useCallback(() => {
+   726→    abortRef.current?.abort();
+   727→    setSending(false);
+   728→  }, []);
+   729→
+   730→  // ── Regenerate last assistant message ──────────────────────────────────────
+   731→  const handleRegenerate = useCallback(() => {
+   732→    if (sending || messages.length < 2) return;
+   733→    // Find last user message
+   734→    let lastUserContent = '';
+   735→    for (let i = messages.length - 1; i >= 0; i--) {
+   736→      if (messages[i].role === 'user') {
+   737→        lastUserContent = messages[i].content;
+   738→        break;
+   739→      }
+   740→    }
+   741→    if (!lastUserContent) return;
+   742→    // Remove last assistant message
+   743→    setMessages(prev => {
+   744→      const next = [...prev];
+   745→      // remove trailing assistant messages
+   746→      while (next.length && next[next.length - 1].role === 'assistant') next.pop();
+   747→      return next;
+   748→    });
+   749→    // Re-send
+   750→    setTimeout(() => sendMessage(lastUserContent), 50);
+   751→  }, [sending, messages, sendMessage]);
+   752→
+   753→  // ── Textarea key handler ───────────────────────────────────────────────────
+   754→  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+   755→    if (e.key === 'Enter' && !e.shiftKey) {
+   756→      e.preventDefault();
+   757→      sendMessage();
+   758→    }
+   759→  };
+   760→
+   761→  // ── Derived data ───────────────────────────────────────────────────────────
+   762→  const currentAgent = useMemo(
+   763→    () => agents.find(a => a.id === currentSessionMeta?.agentId),
+   764→    [agents, currentSessionMeta],
+   765→  );
+   766→
+   767→  // ── Loading state ──────────────────────────────────────────────────────────
+   768→  if (loadingData) {
+   769→    return (
+   770→      <div className="min-h-screen flex items-center justify-center bg-background">
+   771→        <div className="flex flex-col items-center gap-3">
+   772→          <RefreshCw className="w-8 h-8 animate-spin text-muted-foreground" />
+   773→          <p className="text-sm text-muted-foreground">Loading chat…</p>
+   774→        </div>
+   775→      </div>
+   776→    );
+   777→  }
+   778→
+   779→  // ── Render ─────────────────────────────────────────────────────────────────
+   780→  return (
+   781→    <TooltipProvider delayDuration={200}>
+   782→      <div className="h-screen w-full flex bg-background overflow-hidden">
+   783→        {/* Sidebar (desktop static + mobile sheet) */}
+   784→        <ChatSidebar
+   785→          agents={agents}
+   786→          sessions={sessions}
+   787→          selectedAgent={selectedAgent}
+   788→          currentSessionId={currentSessionId}
+   789→          loading={sending}
+   790→          onSelectAgent={setSelectedAgent}
+   791→          onCreateSession={createSession}
+   792→          onSelectSession={loadSession}
+   793→          onDeleteSession={deleteSession}
+   794→          mobileOpen={mobileSidebarOpen}
+   795→          onMobileOpenChange={setMobileSidebarOpen}
+   796→        />
+   797→
+   798→        {/* Main chat column */}
+   799→        <main className="flex-1 flex flex-col min-w-0 bg-gradient-to-b from-background to-slate-50/50 dark:to-slate-950/30">
+   800→          {/* Header */}
+   801→          <header className="flex-shrink-0 border-b bg-background/80 backdrop-blur-sm">
+   802→            <div className="flex items-center gap-2 px-3 sm:px-4 py-2.5">
+   803→              {/* Mobile sidebar trigger */}
+   804→              <Button
+   805→                variant="ghost"
+   806→                size="icon"
+   807→                className="lg:hidden flex-shrink-0"
+   808→                onClick={() => setMobileSidebarOpen(true)}
+   809→                aria-label="Open sessions"
+   810→              >
+   811→                <Menu className="w-4 h-4" />
+   812→              </Button>
+   813→
+   814→              {/* Agent badge */}
+   815→              {currentAgent ? (
+   816→                <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full ${getAgentTypeStyle(currentAgent.type).softBg} ${getAgentTypeStyle(currentAgent.type).softText}`}>
+   817→                  {(() => {
+   818→                    const Icon = getAgentTypeStyle(currentAgent.type).icon;
+   819→                    return <Icon className="w-3.5 h-3.5" />;
+   820→                  })()}
+   821→                  <span className="text-[12px] font-medium">{currentAgent.name}</span>
+   822→                  <span className="text-[10px] uppercase opacity-70">{currentAgent.type}</span>
+   823→                </div>
+   824→              ) : (
+   825→                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+   826→                  <Bot className="w-4 h-4" />
+   827→                  <span>Agent Chat</span>
+   828→                </div>
+   829→              )}
+   830→
+   831→              <div className="flex-1" />
+   832→
+   833→              {/* Session stats (desktop) */}
+   834→              {currentSessionMeta && (
+   835→                <div className="hidden sm:flex items-center gap-3 text-[11px] text-muted-foreground">
+   836→                  <Tooltip>
+   837→                    <TooltipTrigger asChild>
+   838→                      <span className="flex items-center gap-1">
+   839→                        <Activity className="w-3 h-3" />
+   840→                        <span className="font-mono">{currentSessionMeta.messageCount || messages.length} msgs</span>
+   841→                      </span>
+   842→                    </TooltipTrigger>
+   843→                    <TooltipContent>Messages in session</TooltipContent>
+   844→                  </Tooltip>
+   845→                  <Tooltip>
+   846→                    <TooltipTrigger asChild>
+   847→                      <span className="flex items-center gap-1">
+   848→                        <Cpu className="w-3 h-3" />
+   849→                        <span className="font-mono">{formatTokens(currentSessionMeta.totalTokens || 0)}</span>
+   850→                      </span>
+   851→                    </TooltipTrigger>
+   852→                    <TooltipContent>Total tokens used</TooltipContent>
+   853→                  </Tooltip>
+   854→                  <Tooltip>
+   855→                    <TooltipTrigger asChild>
+   856→                      <span className="flex items-center gap-1">
+   857→                        <Coins className="w-3 h-3" />
+   858→                        <span className="font-mono">{formatTotalCost(currentSessionMeta.totalCost)}</span>
+   859→                      </span>
+   860→                    </TooltipTrigger>
+   861→                    <TooltipContent>Total cost</TooltipContent>
+   862→                  </Tooltip>
+   863→                </div>
+   864→              )}
+   865→
+   866→              {/* Regenerate button */}
+   867→              {messages.length > 0 && !sending && (
+   868→                <Tooltip>
+   869→                  <TooltipTrigger asChild>
+   870→                    <Button
+   871→                      variant="ghost"
+   872→                      size="icon"
+   873→                      className="h-8 w-8"
+   874→                      onClick={handleRegenerate}
+   875→                      aria-label="Regenerate last response"
+   876→                    >
+   877→                      <RefreshCw className="w-3.5 h-3.5" />
+   878→                    </Button>
+   879→                  </TooltipTrigger>
+   880→                  <TooltipContent>Regenerate last response</TooltipContent>
+   881→                </Tooltip>
+   882→              )}
+   883→
+   884→              {/* Clear session button */}
+   885→              {currentSessionId && (
+   886→                <Tooltip>
+   887→                  <TooltipTrigger asChild>
+   888→                    <Button
+   889→                      variant="ghost"
+   890→                      size="icon"
+   891→                      className="h-8 w-8 text-muted-foreground hover:text-rose-500"
+   892→                      onClick={() => deleteSession(currentSessionId)}
+   893→                      aria-label="Delete session"
+   894→                    >
+   895→                      <Trash2 className="w-3.5 h-3.5" />
+   896→                    </Button>
+   897→                  </TooltipTrigger>
+   898→                  <TooltipContent>Delete session</TooltipContent>
+   899→                </Tooltip>
+   900→              )}
+   901→            </div>
+   902→
+   903→            {/* Error banner */}
+   904→            {error && (
+   905→              <div className="px-3 sm:px-4 py-1.5 bg-rose-50 dark:bg-rose-950/30 border-t border-rose-200 dark:border-rose-900 flex items-center gap-2 text-[11px] text-rose-700 dark:text-rose-300">
+   906→                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+   907→                <span className="truncate">{error}</span>
+   908→                <button
+   909→                  onClick={() => setError(null)}
+   910→                  className="ml-auto text-rose-500 hover:text-rose-700"
+   911→                  aria-label="Dismiss error"
+   912→                >
+   913→                  ×
+   914→                </button>
+   915→              </div>
+   916→            )}
+   917→          </header>
+   918→
+   919→          {/* Messages scroll area */}
+   920→          <div
+   921→            ref={scrollContainerRef}
+   922→            onScroll={handleScroll}
+   923→            className="flex-1 overflow-y-auto scroll-smooth"
+   924→            style={{ scrollBehavior: 'smooth' }}
+   925→          >
+   926→            {!currentSessionId ? (
+   927→              <EmptyChatState
+   928→                agentName={currentAgent?.name}
+   929→                onSuggest={(s) => {
+   930→                  // Auto-create a session with the selected agent, then send
+   931→                  if (!selectedAgent || selectedAgent === '_none') return;
+   932→                  createSession().then(() => {
+   933→                    // Wait briefly for the session to load, then send
+   934→                    setTimeout(() => sendMessage(s), 400);
+   935→                  });
+   936→                }}
+   937→              />
+   938→            ) : messages.length === 0 ? (
+   939→              <div className="h-full flex flex-col items-center justify-center text-center px-6">
+   940→                <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mb-3">
+   941→                  <Bot className="w-7 h-7 text-muted-foreground" />
+   942→                </div>
+   943→                <p className="text-sm font-medium mb-1">Empty conversation</p>
+   944→                <p className="text-xs text-muted-foreground">Send a message to begin</p>
+   945→              </div>
+   946→            ) : (
+   947→              <div className="max-w-3xl mx-auto px-3 sm:px-6 py-4">
+   948→                {messages.map((msg) => (
+   949→                  <MessageBubble key={msg.id} message={msg} />
+   950→                ))}
+   951→                <div ref={messagesEndRef} className="h-1" />
+   952→              </div>
+   953→            )}
+   954→          </div>
+   955→
+   956→          {/* Input area */}
+   957→          {currentSessionId && (
+   958→            <footer className="flex-shrink-0 border-t bg-background/80 backdrop-blur-sm">
+   959→              <div className="max-w-3xl mx-auto px-3 sm:px-6 py-3">
+   960→                <div className="relative flex items-end gap-2 rounded-xl border bg-card focus-within:ring-2 focus-within:ring-emerald-500/30 transition-shadow">
+   961→                  <Textarea
+   962→                    ref={textareaRef}
+   963→                    value={input}
+   964→                    onChange={(e) => setInput(e.target.value)}
+   965→                    onKeyDown={onKeyDown}
+   966→                    placeholder={`Message ${currentAgent?.name || 'agent'}…  (Enter to send, Shift+Enter for newline)`}
+   967→                    disabled={sending}
+   968→                    rows={1}
+   969→                    className="flex-1 min-h-[44px] max-h-40 resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-[14px] py-3 px-3.5"
+   970→                  />
+   971→                  {sending ? (
+   972→                    <Button
+   973→                      onClick={handleStop}
+   974→                      variant="destructive"
+   975→                      size="icon"
+   976→                      className="m-1.5 flex-shrink-0 rounded-lg"
+   977→                      aria-label="Stop generation"
+   978→                    >
+   979→                      <Square className="w-4 h-4" fill="currentColor" />
+   980→                    </Button>
+   981→                  ) : (
+   982→                    <Button
+   983→                      onClick={() => sendMessage()}
+   984→                      disabled={!input.trim()}
+   985→                      size="icon"
+   986→                      className="m-1.5 flex-shrink-0 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700"
+   987→                      aria-label="Send message"
+   988→                    >
+   989→                      <Send className="w-4 h-4" />
+   990→                    </Button>
+   991→                  )}
+   992→                </div>
+   993→                <div className="flex items-center justify-between mt-1.5 px-1 text-[10px] text-muted-foreground/70">
+   994→                  <span className="hidden sm:inline">
+   995→                    {currentAgent ? `Agent: ${currentAgent.name}` : ''}
+   996→                  </span>
+   997→                  <span className="ml-auto flex items-center gap-1">
+   998→                    <Clock className="w-2.5 h-2.5" />
+   999→                    Responses stream in real-time
+  1000→                  </span>
+  1001→                </div>
+  1002→              </div>
+  1003→            </footer>
+  1004→          )}
+  1005→        </main>
+  1006→      </div>
+  1007→    </TooltipProvider>
+  1008→  );
+  1009→}
+  1010→

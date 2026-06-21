@@ -39,7 +39,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, AlertTriangle, Trash2, RefreshCw, Menu,
-  Activity, Cpu, Coins, Lightbulb, Brain, PanelRightOpen, PanelRightClose,
+  Activity, Cpu, Coins, Lightbulb, Brain,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -59,7 +59,6 @@ import {
   type ModelModeState,
 } from '@/components/chat/ChatInput';
 import type { ToolCallData } from '@/components/chat/ToolCard';
-import { WorkspacePanel } from '@/components/chat/WorkspacePanel';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -248,7 +247,6 @@ export default function ChatPage() {
     jsonModeEnabled: false,
   });
   const [planMode, setPlanMode] = useState(false);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const abortRef = useRef<AbortController | null>(null);
@@ -874,28 +872,6 @@ export default function ChatPage() {
                   <TooltipContent>Delete session</TooltipContent>
                 </Tooltip>
               )}
-
-              {/* Workspace toggle */}
-              {currentSessionId && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant={workspaceOpen ? 'secondary' : 'ghost'}
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setWorkspaceOpen(v => !v)}
-                      aria-label="Toggle workspace"
-                    >
-                      {workspaceOpen
-                        ? <PanelRightClose className="w-3.5 h-3.5" />
-                        : <PanelRightOpen className="w-3.5 h-3.5" />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {workspaceOpen ? 'Close workspace' : 'Open workspace'}
-                  </TooltipContent>
-                </Tooltip>
-              )}
             </div>
 
             {/* Error banner */}
@@ -973,17 +949,6 @@ export default function ChatPage() {
             </div>
           </footer>
         </main>
-
-        {/* Workspace panel (right side) */}
-        <AnimatePresence>
-          {workspaceOpen && currentSessionId && (
-            <WorkspacePanel
-              key="workspace"
-              sessionId={currentSessionId}
-              onClose={() => setWorkspaceOpen(false)}
-            />
-          )}
-        </AnimatePresence>
       </div>
     </TooltipProvider>
   );

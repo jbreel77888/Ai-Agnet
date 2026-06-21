@@ -5,18 +5,37 @@
  * running in Node.js runtime (NOT Edge).
  */
 
-// Load .env first thing (before any other logic)
-try {
-  require('dotenv').config();
-} catch {
-  // dotenv not available
+// Load .env only in development (in production, Railway provides env vars)
+// CRITICAL: dotenv.config() would override Railway's DATABASE_URL
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    require('dotenv').config();
+  } catch {}
 }
 
 export async function registerNode(): Promise<void> {
   try {
-    await startEmbeddedPostgres();
-  } catch (err) {
-    console.error('[instrumentation:node] FATAL:', err);
+    if (process.env.PG_AUTO_START === 'false' || process.env.NODE_ENV === 'production') {
+      // Production mode: use external DATABASE_URL (Railway Postgres)
+      console.log('[instrumentation:node] Production mode — using external DATABASE_URL');
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) {
+        console.error('[instrumentation:node] DATABASE_URL not set!');
+        return;
+      }
+      // Run migrations on external DB
+      await applyMigrations(dbUrl);
+      await seedInitialData(dbUrl);
+    } else {
+      // Development mode: use embedded PostgreSQL
+      await startEmbeddedPostgres();
+    }
+  } catch (err: any) {
+    console.error('[instrumentation:node] FATAL:', err?.message || err, err?.stack || '');
+    // In production, don't crash — let Next.js continue
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[instrumentation:node] Continuing despite error (production mode)');
+    }
   }
 }
 
@@ -66,20 +85,15 @@ async function seedInitialData(connectionString: string): Promise<void> {
   await client.connect();
 
   try {
-    // Check if already seeded
+    // Check if users table exists
     const r = await client.query("SELECT count(*) FROM information_schema.tables WHERE table_name='users'");
     if (parseInt(r.rows[0].count, 10) === 0) {
       console.log('[instrumentation:node] Users table not found — skipping seed');
       return;
     }
 
-    const usersCount = await client.query('SELECT count(*) FROM users');
-    if (parseInt(usersCount.rows[0].count, 10) > 0) {
-      console.log('[instrumentation:node] ✓ Seed data already present');
-      return;
-    }
-
-    console.log('[instrumentation:node] Seeding initial data...');
+    // Always run idempotent seed operations (each uses ON CONFLICT DO NOTHING)
+    console.log('[instrumentation:node] Running idempotent seed...');
 
     // Create roles
     for (const role of [
@@ -92,33 +106,144 @@ async function seedInitialData(connectionString: string): Promise<void> {
         [role.name, role.description]
       );
     }
-    console.log('[instrumentation:node] ✓ Roles created');
+    console.log('[instrumentation:node] ✓ Roles ensured');
 
-    // Create default admin user (password: admin123)
-    // Hash with scrypt
-    const crypto = require('crypto');
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.scryptSync('admin123', salt, 64).toString('hex');
-    const passwordHash = `scrypt$${salt}$${hash}`;
+    // Create default permissions
+    const defaultPerms = [
+      'providers:read', 'providers:write', 'providers:delete',
+      'models:read', 'models:write',
+      'agents:read', 'agents:write', 'agents:delete',
+      'tools:read', 'tools:write', 'tools:execute',
+      'mcp:read', 'mcp:write',
+      'sessions:read', 'sessions:write',
+      'memory:read', 'memory:write',
+      'workflows:read', 'workflows:write', 'workflows:execute',
+      'users:read', 'users:write',
+      'roles:read', 'roles:write',
+      'logs:read', 'traces:read', 'audit:read',
+      'costs:read', 'costs:write',
+    ];
 
-    await client.query(
-      `INSERT INTO users (email, password_hash, name, status) VALUES ($1, $2, $3, 'active')
-       ON CONFLICT (email) DO NOTHING`,
-      ['admin@agent-platform.local', passwordHash, 'System Admin']
-    );
+    for (const perm of defaultPerms) {
+      const [resource, action] = perm.split(':');
+      await client.query(
+        `INSERT INTO permissions (name, resource, action, description) VALUES ($1, $2, $3, $4) ON CONFLICT (name) DO NOTHING`,
+        [perm, resource, action, `${action} ${resource}`]
+      );
+    }
+    console.log('[instrumentation:node] ✓ Permissions created');
 
-    // Assign admin role to admin user
+    // Assign all permissions to admin role
     await client.query(`
-      INSERT INTO user_roles (user_id, role_id)
-      SELECT u.id, r.id FROM users u, roles r
-      WHERE u.email = 'admin@agent-platform.local' AND r.name = 'admin'
+      INSERT INTO role_permissions (role_id, permission_id)
+      SELECT r.id, p.id FROM roles r, permissions p
+      WHERE r.name = 'admin'
       ON CONFLICT DO NOTHING
     `);
 
-    console.log('[instrumentation:node] ✓ Default admin user created:');
-    console.log('    Email: admin@agent-platform.local');
-    console.log('    Password: admin123');
-    console.log('    ⚠️  Change password after first login!');
+    // Assign limited permissions to operator role
+    const operatorPerms = [
+      'agents:read', 'agents:write',
+      'tools:read', 'tools:execute',
+      'mcp:read', 'mcp:write',
+      'sessions:read', 'sessions:write',
+      'memory:read', 'memory:write',
+      'workflows:read', 'workflows:write', 'workflows:execute',
+      'models:read', 'providers:read',
+      'logs:read', 'traces:read', 'costs:read',
+    ];
+    for (const perm of operatorPerms) {
+      await client.query(`
+        INSERT INTO role_permissions (role_id, permission_id)
+        SELECT r.id, p.id FROM roles r, permissions p
+        WHERE r.name = 'operator' AND p.name = $1
+        ON CONFLICT DO NOTHING
+      `, [perm]);
+    }
+
+    // Assign basic permissions to user role
+    const userPerms = [
+      'sessions:read', 'sessions:write',
+      'memory:read', 'memory:write',
+      'agents:read', 'tools:read',
+      'workflows:execute', 'costs:read',
+    ];
+    for (const perm of userPerms) {
+      await client.query(`
+        INSERT INTO role_permissions (role_id, permission_id)
+        SELECT r.id, p.id FROM roles r, permissions p
+        WHERE r.name = 'user' AND p.name = $1
+        ON CONFLICT DO NOTHING
+      `, [perm]);
+    }
+    console.log('[instrumentation:node] ✓ Role permissions assigned');
+
+    // Create default agents
+    const { DEFAULT_AGENTS } = require('./db/seed/agents');
+    for (const agent of DEFAULT_AGENTS) {
+      await client.query(`
+        INSERT INTO agents (name, slug, type, description, system_prompt, temperature, max_tokens, top_p, enabled, can_spawn_subagents, max_subagents, handoff_targets)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0, $8, $9, $10, $11)
+        ON CONFLICT (slug) DO NOTHING
+      `, [
+        agent.name, agent.slug, agent.type, agent.description || null,
+        agent.systemPrompt, agent.temperature.toString(), agent.maxTokens,
+        agent.enabled, agent.canSpawnSubagents, agent.maxSubagents,
+        JSON.stringify(agent.handoffTargets || []),
+      ]);
+    }
+    console.log(`[instrumentation:node] ✓ ${DEFAULT_AGENTS.length} default agents created`);
+
+    // Register built-in tools
+    try {
+      const { registerBuiltinTools } = require('./tools/builtin');
+      registerBuiltinTools();
+    } catch (err) {
+      console.error('[instrumentation:node] Failed to register tools:', err);
+    }
+
+    // Start scheduler for background jobs
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        const { getScheduler } = require('./background/scheduler');
+        const scheduler = getScheduler();
+        scheduler.start();
+        console.log('[instrumentation:node] ✓ Scheduler started');
+      } catch (err) {
+        console.error('[instrumentation:node] Scheduler failed:', err);
+      }
+    }
+
+    // Create default admin user (password: admin123) if not exists
+    const crypto = require('crypto');
+    const [existingAdmin] = (await client.query("SELECT id FROM users WHERE email = 'admin@agent-platform.local'")).rows;
+
+    if (!existingAdmin) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync('admin123', salt, 64).toString('hex');
+      const passwordHash = `scrypt$${salt}$${hash}`;
+
+      await client.query(
+        `INSERT INTO users (email, password_hash, name, status) VALUES ($1, $2, $3, 'active')
+         ON CONFLICT (email) DO NOTHING`,
+        ['admin@agent-platform.local', passwordHash, 'System Admin']
+      );
+
+      // Assign admin role
+      await client.query(`
+        INSERT INTO user_roles (user_id, role_id)
+        SELECT u.id, r.id FROM users u, roles r
+        WHERE u.email = 'admin@agent-platform.local' AND r.name = 'admin'
+        ON CONFLICT DO NOTHING
+      `);
+
+      console.log('[instrumentation:node] ✓ Default admin user created:');
+      console.log('    Email: admin@agent-platform.local');
+      console.log('    Password: admin123');
+      console.log('    ⚠️  Change password after first login!');
+    } else {
+      console.log('[instrumentation:node] ✓ Admin user already exists');
+    }
   } catch (err: any) {
     console.error('[instrumentation:node] Seed error:', err.message);
   } finally {
