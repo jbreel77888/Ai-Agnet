@@ -128,5 +128,18 @@ export function registerBuiltinTools(): void {
   registry.register(new MemorySearchTool());
   registry.register(new MemoryStoreTool());
   registry.register(new WebSearchTool());
+
+  // Register Tensorlake sandbox tool if API key is available
+  if (process.env.TENSORLAKE_API_KEY) {
+    try {
+      const { TensorlakeSandboxTool } = require('./tensorlake');
+      registry.register(new TensorlakeSandboxTool());
+      console.log('[tools] Registered 6 built-in tools (including Tensorlake sandbox)');
+      return;
+    } catch (err) {
+      console.warn('[tools] Failed to register Tensorlake tool:', err);
+    }
+  }
+
   console.log('[tools] Registered 5 built-in tools');
 }
