@@ -88,6 +88,15 @@ class AgentOrchestratorImpl {
     const result: SessionInfo[] = [];
     for (const session of sessions) {
       const agent = registry.list().find(a => a.id === session.agentId);
+      // Count messages in this session — was previously hardcoded to 0
+      let messageCount = 0;
+      try {
+        const pool = await getPoolClient();
+        try {
+          const r = await pool.query('SELECT COUNT(*)::int AS n FROM messages WHERE session_id = $1', [session.id]);
+          messageCount = r.rows[0]?.n || 0;
+        } finally { await pool.end(); }
+      } catch {}
       result.push({
         id: session.id,
         agentId: session.agentId,
@@ -99,7 +108,7 @@ class AgentOrchestratorImpl {
         totalCost: session.totalCost,
         startedAt: session.startedAt,
         lastActivityAt: session.lastActivityAt,
-        messageCount: 0,
+        messageCount,
       });
     }
     return result;
@@ -116,6 +125,12 @@ class AgentOrchestratorImpl {
       const session = result.rows[0];
       const registry = getAgentRegistry();
       const agent = registry.list().find(a => a.id === session.agent_id);
+      // Count messages — was previously hardcoded to 0
+      let messageCount = 0;
+      try {
+        const r2 = await pool.query('SELECT COUNT(*)::int AS n FROM messages WHERE session_id = $1', [sessionId]);
+        messageCount = r2.rows[0]?.n || 0;
+      } catch {}
       return {
         id: session.id,
         agentId: session.agent_id,
@@ -127,7 +142,7 @@ class AgentOrchestratorImpl {
         totalCost: session.total_cost || '0',
         startedAt: session.started_at,
         lastActivityAt: session.last_activity_at,
-        messageCount: 0,
+        messageCount,
       };
     } finally {
       await pool.end();
@@ -234,6 +249,17 @@ class AgentOrchestratorImpl {
     let fullContent = '';
     let tokensUsed = 0;
     let cost = 0;
+    // Track tool calls so we can persist them after the assistant message is saved
+    const collectedToolCalls: Array<{
+      toolName: string;
+      args: any;
+      result: any;
+      durationMs: number;
+      status: 'success' | 'failed' | 'running';
+      error?: string;
+      startedAt: Date;
+      completedAt?: Date;
+    }> = [];
 
     for await (const event of agent.execute({ task: opts.content }, ctx)) {
       if (event.type === 'message_chunk') {
@@ -242,6 +268,26 @@ class AgentOrchestratorImpl {
       if (event.type === 'completed') {
         tokensUsed = event.tokensUsed;
         cost = event.cost;
+      }
+      // Track tool calls for persistence
+      if (event.type === 'tool_call') {
+        collectedToolCalls.push({
+          toolName: (event as any).toolName,
+          args: (event as any).args,
+          result: undefined,
+          durationMs: 0,
+          status: 'running',
+          startedAt: new Date(),
+        });
+      }
+      if (event.type === 'tool_result') {
+        const lastRunning = [...collectedToolCalls].reverse().find(tc => tc.toolName === (event as any).toolName && tc.status === 'running');
+        if (lastRunning) {
+          lastRunning.result = (event as any).result;
+          lastRunning.durationMs = (event as any).durationMs || 0;
+          lastRunning.status = 'success';
+          lastRunning.completedAt = new Date();
+        }
       }
       yield event;
     }
@@ -255,6 +301,22 @@ class AgentOrchestratorImpl {
         [sessionId, fullContent, opts.modelId || null, Math.floor(tokensUsed * 0.3), Math.floor(tokensUsed * 0.7), cost.toFixed(6)]
       );
       savedMsgId = result.rows[0]?.id || 'unknown';
+
+      // Persist tool calls to the tool_calls table — so the Workspace panel has data
+      for (const tc of collectedToolCalls) {
+        try {
+          const argsJson = tc.args ? JSON.stringify(tc.args) : null;
+          const resultJson = tc.result !== undefined ? JSON.stringify(tc.result) : null;
+          const status = tc.status === 'running' ? 'running' : (tc.status === 'success' ? 'success' : 'failed');
+          await pool2.query(
+            `INSERT INTO tool_calls (session_id, message_id, tool_name, arguments, result, status, started_at, completed_at, duration_ms)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [sessionId, savedMsgId, tc.toolName, argsJson, resultJson, status, tc.startedAt, tc.completedAt || new Date(), tc.durationMs]
+          );
+        } catch (tcErr: any) {
+          console.warn('[orchestrator] Failed to save tool call:', tcErr.message);
+        }
+      }
 
       await pool2.query(
         `UPDATE agent_sessions SET total_tokens = total_tokens + $1, total_cost = total_cost + $2, last_activity_at = NOW() WHERE id = $3`,
