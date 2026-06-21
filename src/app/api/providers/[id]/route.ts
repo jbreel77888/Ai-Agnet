@@ -6,20 +6,19 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { db } from '../../../../db/client';
-import { providers, models } from '../../../../db/schema';
+import { db } from '../../../../../db/client';
+import { providers, models } from '../../../../../db/schema';
 import { eq } from 'drizzle-orm';
-import { encrypt } from '../../../../utils/crypto';
-import { createJWTService } from '../../../../auth/jwt';
-import { createAuditLogger } from '../../../../observability/logger/audit';
+import { encrypt } from '../../../../../utils/crypto';
+import { createJWTService } from '../../../../../auth/jwt';
+import { createAuditLogger } from '../../../../../observability/logger/audit';
 
 async function requireAdmin(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
   if (!authHeader?.startsWith('Bearer ')) return null;
-  const token = authHeader.slice(7);
   try {
     const jwtService = createJWTService();
-    const payload = await jwtService.verifyAccessToken(token);
+    const payload = await jwtService.verifyAccessToken(authHeader.slice(7));
     if (!payload.roles?.includes('admin')) return null;
     return payload;
   } catch {
@@ -47,9 +46,7 @@ function sanitizeProvider(p: any) {
   };
 }
 
-type Params = { params: { id: string } };
-
-export async function GET(req: NextRequest, { params }: Params) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireAdmin(req);
   if (!user) {
     return NextResponse.json(
@@ -58,7 +55,8 @@ export async function GET(req: NextRequest, { params }: Params) {
     );
   }
 
-  const [provider] = await db.select().from(providers).where(eq(providers.id, params.id)).limit(1);
+  const { id } = await params;
+  const [provider] = await db.select().from(providers).where(eq(providers.id, id)).limit(1);
   if (!provider) {
     return NextResponse.json(
       { success: false, error: { code: 'NOT_FOUND', message: 'Provider not found' } },
@@ -99,7 +97,7 @@ const updateSchema = z.object({
   status: z.enum(['active', 'inactive']).optional(),
 });
 
-export async function PATCH(req: NextRequest, { params }: Params) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireAdmin(req);
   if (!user) {
     return NextResponse.json(
@@ -109,6 +107,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   try {
+    const { id } = await params;
     const body = await req.json();
     const parsed = updateSchema.safeParse(body);
     if (!parsed.success) {
@@ -124,7 +123,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       updates.apiKeyEncrypted = apiKey ? encrypt(apiKey) : null;
     }
 
-    const [updated] = await db.update(providers).set(updates).where(eq(providers.id, params.id)).returning();
+    const [updated] = await db.update(providers).set(updates).where(eq(providers.id, id)).returning();
     if (!updated) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Provider not found' } },
@@ -137,7 +136,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       userId: user.sub,
       action: 'provider.update',
       resourceType: 'provider',
-      resourceId: params.id,
+      resourceId: id,
       after: sanitizeProvider(updated),
       ipAddress: req.headers.get('x-forwarded-for') || undefined,
       userAgent: req.headers.get('user-agent') || undefined,
@@ -153,7 +152,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireAdmin(req);
   if (!user) {
     return NextResponse.json(
@@ -162,7 +161,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     );
   }
 
-  const [provider] = await db.select().from(providers).where(eq(providers.id, params.id)).limit(1);
+  const { id } = await params;
+  const [provider] = await db.select().from(providers).where(eq(providers.id, id)).limit(1);
   if (!provider) {
     return NextResponse.json(
       { success: false, error: { code: 'NOT_FOUND', message: 'Provider not found' } },
@@ -170,15 +170,14 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     );
   }
 
-  // Cascade delete: models will be deleted automatically (FK with onDelete: cascade)
-  await db.delete(providers).where(eq(providers.id, params.id));
+  await db.delete(providers).where(eq(providers.id, id));
 
   const audit = createAuditLogger();
   await audit.record({
     userId: user.sub,
     action: 'provider.delete',
     resourceType: 'provider',
-    resourceId: params.id,
+    resourceId: id,
     before: sanitizeProvider(provider),
     ipAddress: req.headers.get('x-forwarded-for') || undefined,
     userAgent: req.headers.get('user-agent') || undefined,

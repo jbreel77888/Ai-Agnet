@@ -3,19 +3,37 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Cpu, Plus, RefreshCw, Trash2, Edit, ArrowLeft, CheckCircle2, XCircle, Key,
+  Cpu, Plus, RefreshCw, Trash2, ArrowLeft, Key, Pencil, X,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+
+interface Model {
+  id: string;
+  name: string;
+  displayName: string;
+  status: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  supportsTools: boolean;
+  supportsVision: boolean;
+  supportsStreaming: boolean;
+  supportsThinking: boolean;
+  supportsJsonMode: boolean;
+  inputPricePer1k: string;
+  outputPricePer1k: string;
+  priority: number;
+}
 
 interface Provider {
   id: string;
@@ -26,18 +44,7 @@ interface Provider {
   status: string;
   healthStatus: string;
   hasApiKey: boolean;
-  models: Array<{
-    id: string;
-    name: string;
-    displayName: string;
-    status: string;
-    contextWindow: number;
-    supportsTools: boolean;
-    supportsVision: boolean;
-    supportsStreaming: boolean;
-    inputPricePer1k: string;
-    outputPricePer1k: string;
-  }>;
+  models: Model[];
 }
 
 const PROVIDER_TYPES = [
@@ -56,7 +63,9 @@ export default function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [showAddModel, setShowAddModel] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
   const fetchProviders = async () => {
     const token = localStorage.getItem('accessToken');
@@ -79,6 +88,7 @@ export default function ProvidersPage() {
 
   const handleRefreshModels = async (providerId: string) => {
     setRefreshing(providerId);
+    setError('');
     const token = localStorage.getItem('accessToken');
     try {
       const res = await fetch(`/api/providers/${providerId}/refresh-models`, {
@@ -90,10 +100,12 @@ export default function ProvidersPage() {
         alert(`✓ Added ${data.data.added} new models, updated ${data.data.updated}`);
         fetchProviders();
       } else {
-        alert(`✗ ${data.error?.message}`);
+        const errMsg = data.error?.message || 'Failed to refresh models';
+        const suggestion = data.error?.suggestion || '';
+        setError(`${errMsg}${suggestion ? '\n\n' + suggestion : ''}`);
       }
     } catch (err: any) {
-      alert(`✗ ${err.message}`);
+      setError(`Network error: ${err.message}`);
     } finally {
       setRefreshing(null);
     }
@@ -104,6 +116,20 @@ export default function ProvidersPage() {
     const token = localStorage.getItem('accessToken');
     try {
       const res = await fetch(`/api/providers/${providerId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) fetchProviders();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteModel = async (providerId: string, modelId: string, modelName: string) => {
+    if (!confirm(`Delete model "${modelName}"?`)) return;
+    const token = localStorage.getItem('accessToken');
+    try {
+      const res = await fetch(`/api/models/${modelId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -138,6 +164,22 @@ export default function ProvidersPage() {
       </header>
 
       <main className="container mx-auto px-4 py-8 max-w-6xl">
+        {error && (
+          <Card className="mb-4 border-amber-500/30 bg-amber-500/5">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-amber-700 dark:text-amber-400">Refresh Models Failed</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">{error}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => setError('')}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {providers.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
@@ -156,7 +198,7 @@ export default function ProvidersPage() {
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle className="flex items-center gap-2">
+                      <CardTitle className="flex items-center gap-2 flex-wrap">
                         {provider.name}
                         <Badge variant={provider.status === 'active' ? 'default' : 'secondary'}>
                           {provider.status}
@@ -166,12 +208,13 @@ export default function ProvidersPage() {
                             <Key className="w-3 h-3" /> API Key
                           </Badge>
                         )}
+                        <Badge variant="outline">{provider.type}</Badge>
                       </CardTitle>
-                      <CardDescription className="mt-1">
-                        {provider.type} · {provider.baseUrl} · {provider.models.length} models
+                      <CardDescription className="mt-1 font-mono text-xs">
+                        {provider.baseUrl}
                       </CardDescription>
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-wrap justify-end">
                       <Button
                         size="sm"
                         variant="outline"
@@ -179,7 +222,15 @@ export default function ProvidersPage() {
                         disabled={refreshing === provider.id}
                       >
                         <RefreshCw className={`w-3 h-3 mr-1 ${refreshing === provider.id ? 'animate-spin' : ''}`} />
-                        Refresh Models
+                        Auto-Discover
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => setShowAddModel(provider.id)}
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Add Model
                       </Button>
                       <Button
                         size="sm"
@@ -191,25 +242,57 @@ export default function ProvidersPage() {
                     </div>
                   </div>
                 </CardHeader>
-                {provider.models.length > 0 && (
+                {provider.models.length > 0 ? (
                   <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-2">
                       {provider.models.map((model) => (
-                        <div key={model.id} className="flex items-center justify-between p-2 rounded border text-sm">
-                          <div>
-                            <span className="font-medium">{model.displayName}</span>
-                            <span className="text-xs text-muted-foreground ml-2">
-                              {model.contextWindow > 0 ? `${(model.contextWindow / 1000).toFixed(0)}K ctx` : ''}
-                              {model.supportsTools && ' · tools'}
-                              {model.supportsVision && ' · vision'}
-                              {model.supportsStreaming && ' · stream'}
-                            </span>
+                        <div key={model.id} className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm">{model.displayName}</span>
+                              <code className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{model.name}</code>
+                              <Badge variant={model.status === 'active' ? 'default' : 'secondary'}>{model.status}</Badge>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                              <span>{(model.contextWindow / 1000).toFixed(0)}K ctx</span>
+                              <span>{model.maxOutputTokens} max out</span>
+                              <span>${model.inputPricePer1k}/1K in</span>
+                              <span>${model.outputPricePer1k}/1K out</span>
+                              {model.supportsTools && <Badge variant="outline" className="text-[10px] py-0">tools</Badge>}
+                              {model.supportsVision && <Badge variant="outline" className="text-[10px] py-0">vision</Badge>}
+                              {model.supportsStreaming && <Badge variant="outline" className="text-[10px] py-0">stream</Badge>}
+                              {model.supportsThinking && <Badge variant="outline" className="text-[10px] py-0">thinking</Badge>}
+                              {model.supportsJsonMode && <Badge variant="outline" className="text-[10px] py-0">json</Badge>}
+                              <span className="text-muted-foreground/70">priority: {model.priority}</span>
+                            </div>
                           </div>
-                          <Badge variant={model.status === 'active' ? 'default' : 'secondary'}>
-                            {model.status}
-                          </Badge>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteModel(provider.id, model.id, model.name)}
+                            className="text-rose-500 hover:text-rose-700 hover:bg-rose-500/10"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       ))}
+                    </div>
+                  </CardContent>
+                ) : (
+                  <CardContent>
+                    <div className="text-center py-6 px-4 rounded-lg border border-dashed">
+                      <p className="text-sm text-muted-foreground mb-2">No models yet</p>
+                      <p className="text-xs text-muted-foreground/70 mb-3">
+                        Try "Auto-Discover" first. If it fails, use "Add Model" to add models manually.
+                      </p>
+                      <div className="flex gap-2 justify-center">
+                        <Button size="sm" variant="outline" onClick={() => handleRefreshModels(provider.id)}>
+                          <RefreshCw className="w-3 h-3 mr-1" /> Auto-Discover
+                        </Button>
+                        <Button size="sm" onClick={() => setShowAddModel(provider.id)}>
+                          <Plus className="w-3 h-3 mr-1" /> Add Model Manually
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 )}
@@ -220,6 +303,14 @@ export default function ProvidersPage() {
       </main>
 
       <AddProviderDialog open={showAdd} onOpenChange={setShowAdd} onSuccess={fetchProviders} />
+      {showAddModel && (
+        <AddModelDialog
+          providerId={showAddModel}
+          open={!!showAddModel}
+          onOpenChange={(v) => !v && setShowAddModel(null)}
+          onSuccess={fetchProviders}
+        />
+      )}
     </div>
   );
 }
@@ -276,7 +367,7 @@ function AddProviderDialog({ open, onOpenChange, onSuccess }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Provider</DialogTitle>
           <DialogDescription>Configure a new LLM provider</DialogDescription>
@@ -314,6 +405,208 @@ function AddProviderDialog({ open, onOpenChange, onSuccess }: {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={loading}>
               {loading ? 'Adding...' : 'Add Provider'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddModelDialog({ providerId, open, onOpenChange, onSuccess }: {
+  providerId: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onSuccess: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [contextWindow, setContextWindow] = useState(8192);
+  const [maxOutputTokens, setMaxOutputTokens] = useState(4096);
+  const [inputPricePer1k, setInputPricePer1k] = useState(0);
+  const [outputPricePer1k, setOutputPricePer1k] = useState(0);
+  const [supportsTools, setSupportsTools] = useState(false);
+  const [supportsVision, setSupportsVision] = useState(false);
+  const [supportsStreaming, setSupportsStreaming] = useState(true);
+  const [supportsThinking, setSupportsThinking] = useState(false);
+  const [supportsJsonMode, setSupportsJsonMode] = useState(false);
+  const [priority, setPriority] = useState(100);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    const token = localStorage.getItem('accessToken');
+    try {
+      const res = await fetch(`/api/providers/${providerId}/models`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name,
+          displayName: displayName || undefined,
+          contextWindow,
+          maxOutputTokens,
+          inputPricePer1k,
+          outputPricePer1k,
+          supportsTools,
+          supportsVision,
+          supportsStreaming,
+          supportsThinking,
+          supportsJsonMode,
+          priority,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error?.message || 'Failed');
+      onOpenChange(false);
+      // Reset form
+      setName(''); setDisplayName(''); setContextWindow(8192); setMaxOutputTokens(4096);
+      setInputPricePer1k(0); setOutputPricePer1k(0);
+      setSupportsTools(false); setSupportsVision(false); setSupportsStreaming(true);
+      setSupportsThinking(false); setSupportsJsonMode(false); setPriority(100);
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add Model Manually</DialogTitle>
+          <DialogDescription>
+            Add a model to this provider. Use this when auto-discovery doesn't work or the provider doesn't list models.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && <p className="text-sm text-rose-500">{error}</p>}
+
+          <div className="space-y-2">
+            <Label htmlFor="modelName">Model Name <span className="text-rose-500">*</span></Label>
+            <Input
+              id="modelName"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., nemotron-3-ultra-free"
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              The exact model name the provider's API expects (case-sensitive)
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="displayName">Display Name (optional)</Label>
+            <Input
+              id="displayName"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Human-friendly name (defaults to model name)"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="contextWindow">Context Window (tokens)</Label>
+              <Input
+                id="contextWindow"
+                type="number"
+                min={1024}
+                value={contextWindow}
+                onChange={(e) => setContextWindow(parseInt(e.target.value) || 8192)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="maxOutputTokens">Max Output Tokens</Label>
+              <Input
+                id="maxOutputTokens"
+                type="number"
+                min={1}
+                value={maxOutputTokens}
+                onChange={(e) => setMaxOutputTokens(parseInt(e.target.value) || 4096)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="inputPrice">Input Price ($/1K tokens)</Label>
+              <Input
+                id="inputPrice"
+                type="number"
+                min={0}
+                step="0.000001"
+                value={inputPricePer1k}
+                onChange={(e) => setInputPricePer1k(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="outputPrice">Output Price ($/1K tokens)</Label>
+              <Input
+                id="outputPrice"
+                type="number"
+                min={0}
+                step="0.000001"
+                value={outputPricePer1k}
+                onChange={(e) => setOutputPricePer1k(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Capabilities</Label>
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border bg-card">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="tools" className="text-sm cursor-pointer">Tool Calling</Label>
+                <Switch id="tools" checked={supportsTools} onCheckedChange={setSupportsTools} />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="vision" className="text-sm cursor-pointer">Vision</Label>
+                <Switch id="vision" checked={supportsVision} onCheckedChange={setSupportsVision} />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="streaming" className="text-sm cursor-pointer">Streaming</Label>
+                <Switch id="streaming" checked={supportsStreaming} onCheckedChange={setSupportsStreaming} />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="thinking" className="text-sm cursor-pointer">Thinking</Label>
+                <Switch id="thinking" checked={supportsThinking} onCheckedChange={setSupportsThinking} />
+              </div>
+              <div className="flex items-center justify-between col-span-2">
+                <Label htmlFor="jsonMode" className="text-sm cursor-pointer">JSON Mode</Label>
+                <Switch id="jsonMode" checked={supportsJsonMode} onCheckedChange={setSupportsJsonMode} />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="priority">Priority (lower = preferred)</Label>
+            <Input
+              id="priority"
+              type="number"
+              min={1}
+              max={1000}
+              value={priority}
+              onChange={(e) => setPriority(parseInt(e.target.value) || 100)}
+            />
+            <p className="text-xs text-muted-foreground">
+              When multiple models are available, lower priority numbers are picked first
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={loading || !name}>
+              {loading ? 'Adding...' : 'Add Model'}
             </Button>
           </DialogFooter>
         </form>
