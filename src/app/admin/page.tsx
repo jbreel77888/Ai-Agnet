@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   Bot, Cpu, Boxes, Activity, LogOut, ExternalLink,
   Server, Shield, CheckCircle2, XCircle, RefreshCw,
-  Wrench, FileText, Workflow, HardDrive,
+  Wrench, FileText, Workflow, HardDrive, Users, DollarSign, ScrollText,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -74,6 +74,9 @@ export default function AdminDashboard() {
     { title: 'Documents', desc: 'Upload documents for RAG semantic search', icon: FileText, href: '/admin/documents', color: 'text-cyan-500' },
     { title: 'Workflows', desc: 'DAG workflow engine + run monitoring', icon: Workflow, href: '/admin/workflows', color: 'text-rose-500' },
     { title: 'Storage', desc: 'Upload and manage files', icon: HardDrive, href: '/admin/storage', color: 'text-indigo-500' },
+    { title: 'Users', desc: 'Manage users and roles', icon: Users, href: '/admin/users', color: 'text-teal-500' },
+    { title: 'Costs', desc: 'Cost tracking, budgets, and analytics', icon: DollarSign, href: '/admin/costs', color: 'text-green-500' },
+    { title: 'Logs', desc: 'System traces and audit logs', icon: ScrollText, href: '/admin/logs', color: 'text-orange-500' },
   ];
 
   return (
@@ -148,7 +151,7 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Admin sections */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
           {adminCards.map((card) => (
             <Card key={card.title} className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push(card.href)}>
               <CardHeader>
