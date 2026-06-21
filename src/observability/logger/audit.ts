@@ -23,6 +23,17 @@ export function createAuditLogger(): AuditLogger {
   return {
     async record(entry) {
       try {
+        // Sanitize IP address: take only the first IP from comma-separated list
+        // (x-forwarded-for can contain "client-ip, proxy1-ip, proxy2-ip")
+        let ip: string | null = null;
+        if (entry.ipAddress) {
+          const firstIp = entry.ipAddress.split(',')[0].trim();
+          // Validate it looks like an IP address (IPv4 or IPv6)
+          if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(firstIp) || /^[0-9a-fA-F:]+$/.test(firstIp)) {
+            ip = firstIp;
+          }
+        }
+
         await db.insert(auditLogs).values({
           userId: entry.userId,
           action: entry.action,
@@ -30,11 +41,12 @@ export function createAuditLogger(): AuditLogger {
           resourceId: entry.resourceId,
           before: entry.before as any,
           after: entry.after as any,
-          ipAddress: entry.ipAddress,
+          ipAddress: ip as any,
           userAgent: entry.userAgent,
         });
       } catch (err) {
-        console.error('[audit] Failed to record entry:', err);
+        // Don't fail the request if audit logging fails
+        console.error('[audit] Failed to record entry:', err instanceof Error ? err.message : err);
       }
     },
   };
