@@ -104,7 +104,7 @@ export function createLongTermMemory(): LongTermMemory {
     };
   };
 
-  const search = async (query: MemoryQuery): Promise<MemorySearchResult[]> {
+  const search = async (query: MemoryQuery): Promise<MemorySearchResult[]> => {
     const topK = query.topK ?? 5;
     const minScore = query.minScore ?? 0.7;
 

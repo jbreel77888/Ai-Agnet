@@ -194,6 +194,14 @@ async function seedInitialData(connectionString: string): Promise<void> {
     }
     console.log(`[instrumentation:node] ✓ ${DEFAULT_AGENTS.length} default agents created`);
 
+    // Register built-in tools
+    try {
+      const { registerBuiltinTools } = require('./tools/builtin');
+      registerBuiltinTools();
+    } catch (err) {
+      console.error('[instrumentation:node] Failed to register tools:', err);
+    }
+
     // Create default admin user (password: admin123) if not exists
     const crypto = require('crypto');
     const [existingAdmin] = (await client.query("SELECT id FROM users WHERE email = 'admin@agent-platform.local'")).rows;

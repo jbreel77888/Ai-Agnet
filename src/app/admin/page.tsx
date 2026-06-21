@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   Bot, Cpu, Boxes, Activity, LogOut, ExternalLink,
   Server, Shield, CheckCircle2, XCircle, RefreshCw,
+  Wrench, FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -67,8 +68,10 @@ export default function AdminDashboard() {
 
   const adminCards = [
     { title: 'Providers', desc: 'Manage LLM providers and API keys', icon: Cpu, href: '/admin/providers', color: 'text-emerald-500' },
-    { title: 'Agents', desc: 'Configure AI agents and their prompts', icon: Bot, icon: Bot, href: '/admin/agents', color: 'text-blue-500' },
-    { title: 'Chat', desc: 'Test chat with available models', icon: Activity, href: '/admin/chat', color: 'text-purple-500' },
+    { title: 'Agents', desc: 'Configure AI agents and their prompts', icon: Bot, href: '/admin/agents', color: 'text-blue-500' },
+    { title: 'Chat', desc: 'Chat with agents — streaming + tools', icon: Activity, href: '/admin/chat', color: 'text-purple-500' },
+    { title: 'Tools', desc: 'Built-in tools (calculator, web search, memory, HTTP)', icon: Wrench, href: '/admin/tools', color: 'text-amber-500' },
+    { title: 'Documents', desc: 'Upload documents for RAG semantic search', icon: FileText, href: '/admin/documents', color: 'text-cyan-500' },
   ];
 
   return (
@@ -143,7 +146,7 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Admin sections */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
           {adminCards.map((card) => (
             <Card key={card.title} className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push(card.href)}>
               <CardHeader>
