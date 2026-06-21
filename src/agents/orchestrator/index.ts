@@ -11,7 +11,7 @@
  */
 import { db } from '../../db/client';
 import { agentSessions, messages, models } from '../../db/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, sql } from 'drizzle-orm';
 import { getAgentRegistry } from '../registry';
 import type { AgentEvent, AgentContext, ChatMessage } from '../../types';
 
@@ -159,16 +159,8 @@ class AgentOrchestratorImpl {
     const agent = registry.list().find(a => a.id === session.agentId);
     if (!agent) throw new Error('Agent not found');
 
-    // Save user message
-    await db.insert(messages).values({
-      sessionId,
-      role: 'user',
-      content: opts.content,
-      tokensInput: 0,
-      tokensOutput: 0,
-      cost: '0',
-      latencyMs: 0,
-    });
+    // Save user message (use raw SQL to avoid numeric type issues)
+    await db.execute(sql`INSERT INTO messages (session_id, role, content, tokens_input, tokens_output, cost, latency_ms) VALUES (${sessionId}, 'user', ${opts.content}, 0, 0, '0', 0)`);
 
     // Update session activity
     await db.update(agentSessions).set({
@@ -217,27 +209,24 @@ class AgentOrchestratorImpl {
       yield event;
     }
 
-    // Save assistant response
-    const [savedMsg] = await db.insert(messages).values({
-      sessionId,
-      role: 'assistant',
-      content: fullContent,
-      modelId: opts.modelId || null,
-      tokensInput: Math.floor(tokensUsed * 0.3),
-      tokensOutput: Math.floor(tokensUsed * 0.7),
-      cost: cost.toFixed(6),
-      latencyMs: 0,
-      finishReason: 'stop',
-    }).returning();
+    // Save assistant response (use raw SQL to avoid numeric type issues)
+    const savedMsgResult = await db.execute(sql`
+      INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, latency_ms, finish_reason)
+      VALUES (${sessionId}, 'assistant', ${fullContent}, ${opts.modelId || null}, ${Math.floor(tokensUsed * 0.3)}, ${Math.floor(tokensUsed * 0.7)}, ${cost.toFixed(6)}, 0, 'stop')
+      RETURNING id
+    `);
+    const savedMsgId = (savedMsgResult as any).rows?.[0]?.id || 'unknown';
 
-    // Update session totals
-    await db.update(agentSessions).set({
-      totalTokens: session.totalTokens + tokensUsed,
-      totalCost: (parseFloat(session.totalCost) + cost).toFixed(4),
-      lastActivityAt: new Date(),
-    }).where(eq(agentSessions.id, sessionId));
+    // Update session totals (use raw SQL for numeric type)
+    await db.execute(sql`
+      UPDATE agent_sessions
+      SET total_tokens = total_tokens + ${tokensUsed},
+          total_cost = (total_cost::numeric + ${cost.toFixed(6)})::numeric(10,4),
+          last_activity_at = NOW()
+      WHERE id = ${sessionId}
+    `);
 
-    yield { type: 'message_saved', messageId: savedMsg.id };
+    yield { type: 'message_saved', messageId: savedMsgId };
   }
 
   async deleteSession(sessionId: string, userId: string): Promise<void> {
