@@ -159,12 +159,11 @@ class AgentOrchestratorImpl {
     const agent = registry.list().find(a => a.id === session.agentId);
     if (!agent) throw new Error('Agent not found');
 
-    // Save user message using Drizzle (with sql.raw for numeric defaults)
-    await db.insert(messages).values({
-      sessionId,
-      role: 'user',
-      content: opts.content,
-    });
+    // Save user message — use raw SQL via db.execute for maximum compatibility
+    await db.execute(sql`
+      INSERT INTO messages (session_id, role, content)
+      VALUES (${sessionId}, 'user'::msg_role, ${opts.content})
+    `);
 
     // Update session activity
     await db.update(agentSessions).set({
@@ -213,19 +212,13 @@ class AgentOrchestratorImpl {
       yield event;
     }
 
-    // Save assistant response using Drizzle
-    const [savedMsg] = await db.insert(messages).values({
-      sessionId,
-      role: 'assistant',
-      content: fullContent,
-      modelId: opts.modelId || null,
-      tokensInput: Math.floor(tokensUsed * 0.3),
-      tokensOutput: Math.floor(tokensUsed * 0.7),
-      cost: cost.toFixed(6),
-      latencyMs: 0,
-      finishReason: 'stop',
-    }).returning({ id: messages.id });
-    const savedMsgId = savedMsg?.id || 'unknown';
+    // Save assistant response — use raw SQL
+    const assistantResult = await db.execute(sql`
+      INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, finish_reason)
+      VALUES (${sessionId}, 'assistant'::msg_role, ${fullContent}, ${opts.modelId || null}, ${Math.floor(tokensUsed * 0.3)}, ${Math.floor(tokensUsed * 0.7)}, ${sql.raw(cost.toFixed(6))}, 'stop')
+      RETURNING id
+    `);
+    const savedMsgId = (assistantResult as any).rows?.[0]?.id || 'unknown';
 
     // Update session totals
     await db.execute(sql`
