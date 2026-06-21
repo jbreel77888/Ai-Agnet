@@ -185,10 +185,15 @@ class AgentOrchestratorImpl {
     // Save user message — use fresh pg pool for maximum compatibility
     const pool = await getPoolClient();
     try {
+      console.log('[orchestrator] Inserting user message into messages table...');
       await pool.query(
         `INSERT INTO messages (session_id, role, content) VALUES ($1, 'user', $2)`,
         [sessionId, opts.content]
       );
+      console.log('[orchestrator] ✓ User message saved');
+    } catch (err: any) {
+      console.error('[orchestrator] Failed to save user message:', err.message);
+      throw err;
     } finally {
       await pool.end();
     }
