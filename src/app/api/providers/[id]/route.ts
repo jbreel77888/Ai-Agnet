@@ -6,12 +6,12 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { db } from '../../../../../db/client';
-import { providers, models } from '../../../../../db/schema';
+import { db } from '../../../../db/client';
+import { providers, models } from '../../../../db/schema';
 import { eq } from 'drizzle-orm';
-import { encrypt } from '../../../../../utils/crypto';
-import { createJWTService } from '../../../../../auth/jwt';
-import { createAuditLogger } from '../../../../../observability/logger/audit';
+import { encrypt } from '../../../../utils/crypto';
+import { createJWTService } from '../../../../auth/jwt';
+import { createAuditLogger } from '../../../../observability/logger/audit';
 
 async function requireAdmin(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
