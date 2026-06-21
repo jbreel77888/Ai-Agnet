@@ -2,11 +2,11 @@
  * JWT Service — Access + Refresh tokens
  */
 import jwt from 'jsonwebtoken';
-import { hashToken, generateToken } from '../../../utils/crypto';
-import { db } from '../../../db/client';
-import { refreshTokens } from '../../../db/schema/auth.schema';
+import { hashToken, generateToken } from '../../utils/crypto';
+import { db } from '../../db/client';
+import { refreshTokens } from '../../db/schema/auth.schema';
 import { eq, lt } from 'drizzle-orm';
-import type { AuthUser } from '../../../types';
+import type { AuthUser } from '../../types';
 
 export interface JWTService {
   issueTokens(user: AuthUser, deviceInfo?: Record<string, unknown>): Promise<TokenPair>;
@@ -109,7 +109,7 @@ export function createJWTService(): JWTService {
       .where(eq(refreshTokens.id, record.id));
 
     // Build minimal user from DB
-    const { users, userRoles, roles } = await import('../../../db/schema/auth.schema');
+    const { users, userRoles, roles } = await import('../../db/schema/auth.schema');
     const { eq: eqFn } = await import('drizzle-orm');
     const [user] = await db.select().from(users).where(eqFn(users.id, record.userId)).limit(1);
     if (!user || user.status !== 'active') throw new Error('User not found or inactive');
