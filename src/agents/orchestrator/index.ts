@@ -15,6 +15,17 @@ import { eq, desc, and, sql } from 'drizzle-orm';
 import { getAgentRegistry } from '../registry';
 import type { AgentEvent, AgentContext, ChatMessage } from '../../types';
 
+/**
+ * Get a fresh pg client from the pool — uses process.env.DATABASE_URL
+ * which is updated by instrumentation on startup
+ */
+async function getPoolClient() {
+  // Re-create pool if DATABASE_URL changed (e.g., after instrumentation)
+  const { Pool } = require('pg');
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+  return pool;
+}
+
 export interface CreateSessionOpts {
   agentSlug: string;
   userId: string;
@@ -98,44 +109,58 @@ class AgentOrchestratorImpl {
   }
 
   async getSession(sessionId: string, userId: string): Promise<SessionInfo | null> {
-    const result: any = await db.execute(sql`SELECT * FROM agent_sessions WHERE id = ${sessionId} AND user_id = ${userId} LIMIT 1`);
-    const rows = result?.rows || result || [];
-    if (!rows || rows.length === 0) return null;
-    const session = rows[0];
-    const registry = getAgentRegistry();
-    const agent = registry.list().find(a => a.id === session.agent_id);
-    return {
-      id: session.id,
-      agentId: session.agent_id,
-      agentSlug: agent?.slug || 'unknown',
-      agentName: agent?.slug || 'Unknown',
-      title: session.title || 'Untitled',
-      status: session.status,
-      totalTokens: session.total_tokens || 0,
-      totalCost: session.total_cost || '0',
-      startedAt: session.started_at,
-      lastActivityAt: session.last_activity_at,
-      messageCount: 0,
-    };
+    const pool = await getPoolClient();
+    try {
+      const result = await pool.query(
+        `SELECT * FROM agent_sessions WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [sessionId, userId]
+      );
+      if (result.rows.length === 0) return null;
+      const session = result.rows[0];
+      const registry = getAgentRegistry();
+      const agent = registry.list().find(a => a.id === session.agent_id);
+      return {
+        id: session.id,
+        agentId: session.agent_id,
+        agentSlug: agent?.slug || 'unknown',
+        agentName: agent?.slug || 'Unknown',
+        title: session.title || 'Untitled',
+        status: session.status,
+        totalTokens: session.total_tokens || 0,
+        totalCost: session.total_cost || '0',
+        startedAt: session.started_at,
+        lastActivityAt: session.last_activity_at,
+        messageCount: 0,
+      };
+    } finally {
+      await pool.end();
+    }
   }
 
   async getMessages(sessionId: string, userId: string): Promise<any[]> {
     const session = await this.getSession(sessionId, userId);
     if (!session) throw new Error('Session not found');
 
-    const result: any = await db.execute(sql`SELECT * FROM messages WHERE session_id = ${sessionId} ORDER BY created_at ASC`);
-    const rows = result?.rows || result || [];
-    return rows.map((m: any) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      modelId: m.model_id,
-      tokensInput: m.tokens_input,
-      tokensOutput: m.tokens_output,
-      cost: m.cost,
-      latencyMs: m.latency_ms,
-      createdAt: m.created_at,
-    }));
+    const pool = await getPoolClient();
+    try {
+      const result = await pool.query(
+        `SELECT * FROM messages WHERE session_id = $1 ORDER BY created_at ASC`,
+        [sessionId]
+      );
+      return result.rows.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        modelId: m.model_id,
+        tokensInput: m.tokens_input,
+        tokensOutput: m.tokens_output,
+        cost: m.cost,
+        latencyMs: m.latency_ms,
+        createdAt: m.created_at,
+      }));
+    } finally {
+      await pool.end();
+    }
   }
 
   async *sendMessage(sessionId: string, opts: SendMessageOpts): AsyncIterable<AgentEvent | { type: 'message_saved'; messageId: string }> {
@@ -152,9 +177,16 @@ class AgentOrchestratorImpl {
     const agent = registry.list().find(a => a.id === session.agentId);
     if (!agent) throw new Error('Agent not found');
 
-    // Save user message — use db.execute with raw SQL
-    // Only specify required columns, let DB defaults handle the rest
-    await db.execute(sql`INSERT INTO messages (session_id, role, content) VALUES (${sessionId}, ${'user'}::msg_role, ${opts.content})`);
+    // Save user message — use fresh pg pool for maximum compatibility
+    const pool = await getPoolClient();
+    try {
+      await pool.query(
+        `INSERT INTO messages (session_id, role, content) VALUES ($1, 'user', $2)`,
+        [sessionId, opts.content]
+      );
+    } finally {
+      await pool.end();
+    }
 
     // Update session activity
     await db.update(agentSessions).set({
@@ -203,22 +235,23 @@ class AgentOrchestratorImpl {
       yield event;
     }
 
-    // Save assistant response — use db.execute
-    const assistantResult: any = await db.execute(sql`
-      INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, finish_reason)
-      VALUES (${sessionId}, ${'assistant'}::msg_role, ${fullContent}, ${opts.modelId || null}, ${Math.floor(tokensUsed * 0.3)}, ${Math.floor(tokensUsed * 0.7)}, ${sql.raw(cost.toFixed(6))}, ${'stop'})
-      RETURNING id
-    `);
-    const savedMsgId = assistantResult?.rows?.[0]?.id || assistantResult?.[0]?.id || 'unknown';
+    // Save assistant response — use fresh pg pool
+    const pool2 = await getPoolClient();
+    let savedMsgId = 'unknown';
+    try {
+      const result = await pool2.query(
+        `INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, finish_reason) VALUES ($1, 'assistant', $2, $3, $4, $5, $6, 'stop') RETURNING id`,
+        [sessionId, fullContent, opts.modelId || null, Math.floor(tokensUsed * 0.3), Math.floor(tokensUsed * 0.7), cost.toFixed(6)]
+      );
+      savedMsgId = result.rows[0]?.id || 'unknown';
 
-    // Update session totals
-    await db.execute(sql`
-      UPDATE agent_sessions
-      SET total_tokens = total_tokens + ${tokensUsed},
-          total_cost = total_cost + ${sql.raw(cost.toFixed(6))},
-          last_activity_at = NOW()
-      WHERE id = ${sessionId}
-    `);
+      await pool2.query(
+        `UPDATE agent_sessions SET total_tokens = total_tokens + $1, total_cost = total_cost + $2, last_activity_at = NOW() WHERE id = $3`,
+        [tokensUsed, cost.toFixed(6), sessionId]
+      );
+    } finally {
+      await pool2.end();
+    }
 
     yield { type: 'message_saved', messageId: savedMsgId };
   }
