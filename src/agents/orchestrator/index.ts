@@ -9,7 +9,7 @@
  * 5. Streams events back to the client
  * 6. Saves the response to DB
  */
-import { db } from '../../db/client';
+import { db, dbPool } from '../../db/client';
 import { agentSessions, messages, models } from '../../db/schema';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { getAgentRegistry } from '../registry';
@@ -98,51 +98,58 @@ class AgentOrchestratorImpl {
   }
 
   async getSession(sessionId: string, userId: string): Promise<SessionInfo | null> {
-    const [session] = await db.select()
-      .from(agentSessions)
-      .where(and(eq(agentSessions.id, sessionId), eq(agentSessions.userId, userId)))
-      .limit(1);
-    if (!session) return null;
-
-    const registry = getAgentRegistry();
-    const agent = registry.list().find(a => a.id === session.agentId);
-
-    return {
-      id: session.id,
-      agentId: session.agentId,
-      agentSlug: agent?.slug || 'unknown',
-      agentName: agent?.slug || 'Unknown',
-      title: session.title || 'Untitled',
-      status: session.status,
-      totalTokens: session.totalTokens,
-      totalCost: session.totalCost,
-      startedAt: session.startedAt,
-      lastActivityAt: session.lastActivityAt,
-      messageCount: 0,
-    };
+    const client = await dbPool.connect();
+    try {
+      const result = await client.query(
+        `SELECT * FROM agent_sessions WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [sessionId, userId]
+      );
+      if (result.rows.length === 0) return null;
+      const session = result.rows[0];
+      const registry = getAgentRegistry();
+      const agent = registry.list().find(a => a.id === session.agent_id);
+      return {
+        id: session.id,
+        agentId: session.agent_id,
+        agentSlug: agent?.slug || 'unknown',
+        agentName: agent?.slug || 'Unknown',
+        title: session.title || 'Untitled',
+        status: session.status,
+        totalTokens: session.total_tokens || 0,
+        totalCost: session.total_cost || '0',
+        startedAt: session.started_at,
+        lastActivityAt: session.last_activity_at,
+        messageCount: 0,
+      };
+    } finally {
+      client.release();
+    }
   }
 
   async getMessages(sessionId: string, userId: string): Promise<any[]> {
-    // Verify session belongs to user
     const session = await this.getSession(sessionId, userId);
     if (!session) throw new Error('Session not found');
 
-    const msgs = await db.select()
-      .from(messages)
-      .where(eq(messages.sessionId, sessionId))
-      .orderBy(messages.createdAt);
-
-    return msgs.map(m => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      modelId: m.modelId,
-      tokensInput: m.tokensInput,
-      tokensOutput: m.tokensOutput,
-      cost: m.cost,
-      latencyMs: m.latencyMs,
-      createdAt: m.createdAt,
-    }));
+    const client = await dbPool.connect();
+    try {
+      const result = await client.query(
+        `SELECT * FROM messages WHERE session_id = $1 ORDER BY created_at ASC`,
+        [sessionId]
+      );
+      return result.rows.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        modelId: m.model_id,
+        tokensInput: m.tokens_input,
+        tokensOutput: m.tokens_output,
+        cost: m.cost,
+        latencyMs: m.latency_ms,
+        createdAt: m.created_at,
+      }));
+    } finally {
+      client.release();
+    }
   }
 
   async *sendMessage(sessionId: string, opts: SendMessageOpts): AsyncIterable<AgentEvent | { type: 'message_saved'; messageId: string }> {
@@ -159,11 +166,16 @@ class AgentOrchestratorImpl {
     const agent = registry.list().find(a => a.id === session.agentId);
     if (!agent) throw new Error('Agent not found');
 
-    // Save user message — use raw SQL via db.execute for maximum compatibility
-    await db.execute(sql`
-      INSERT INTO messages (session_id, role, content)
-      VALUES (${sessionId}, 'user'::msg_role, ${opts.content})
-    `);
+    // Save user message — use dbPool directly for maximum compatibility
+    const client = await dbPool.connect();
+    try {
+      await client.query(
+        `INSERT INTO messages (session_id, role, content) VALUES ($1, 'user', $2)`,
+        [sessionId, opts.content]
+      );
+    } finally {
+      client.release();
+    }
 
     // Update session activity
     await db.update(agentSessions).set({
@@ -212,22 +224,23 @@ class AgentOrchestratorImpl {
       yield event;
     }
 
-    // Save assistant response — use raw SQL
-    const assistantResult = await db.execute(sql`
-      INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, finish_reason)
-      VALUES (${sessionId}, 'assistant'::msg_role, ${fullContent}, ${opts.modelId || null}, ${Math.floor(tokensUsed * 0.3)}, ${Math.floor(tokensUsed * 0.7)}, ${sql.raw(cost.toFixed(6))}, 'stop')
-      RETURNING id
-    `);
-    const savedMsgId = (assistantResult as any).rows?.[0]?.id || 'unknown';
+    // Save assistant response — use dbPool directly
+    const client2 = await dbPool.connect();
+    let savedMsgId = 'unknown';
+    try {
+      const result = await client2.query(
+        `INSERT INTO messages (session_id, role, content, model_id, tokens_input, tokens_output, cost, finish_reason) VALUES ($1, 'assistant', $2, $3, $4, $5, $6, 'stop') RETURNING id`,
+        [sessionId, fullContent, opts.modelId || null, Math.floor(tokensUsed * 0.3), Math.floor(tokensUsed * 0.7), cost.toFixed(6)]
+      );
+      savedMsgId = result.rows[0]?.id || 'unknown';
 
-    // Update session totals
-    await db.execute(sql`
-      UPDATE agent_sessions
-      SET total_tokens = total_tokens + ${tokensUsed},
-          total_cost = total_cost + ${sql.raw(cost.toFixed(6))},
-          last_activity_at = NOW()
-      WHERE id = ${sessionId}
-    `);
+      await client2.query(
+        `UPDATE agent_sessions SET total_tokens = total_tokens + $1, total_cost = total_cost + $2, last_activity_at = NOW() WHERE id = $3`,
+        [tokensUsed, cost.toFixed(6), sessionId]
+      );
+    } finally {
+      client2.release();
+    }
 
     yield { type: 'message_saved', messageId: savedMsgId };
   }
