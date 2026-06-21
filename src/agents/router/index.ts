@@ -50,16 +50,18 @@ const AGENT_VOCABS: AgentVocab[] = [
       'refactor', 'implement', 'algorithm', 'api', 'endpoint', 'compile', 'syntax',
       'typescript', 'javascript', 'python', 'java', 'go', 'rust', 'react', 'nextjs',
       'sql', 'html', 'css', 'json', 'yaml', 'regex', 'unit test', 'integration test',
+      'pip', 'npm', 'package', 'install', 'requirements',
       'كود', 'برمج', 'دالة', 'كلاس', 'خوارزمية', 'تصحيح', 'خطأ برمجي',
-      'تنفيذ', 'كتابة كود', 'تعديل الكود', 'تطوير', 'برنامج',
+      'تنفيذ', 'كتابة كود', 'تعديل الكود', 'تطوير', 'برنامج', 'حزمة', 'تثبيت',
     ],
     patterns: [
       /\b(write|create|generate|fix|debug|refactor|implement|optimize)\s+(a |an |the |some )?(function|class|method|component|script|program|api|endpoint|algorithm)\b/i,
       /\bcode\s+(block|snippet|sample|example)\b/i,
       /\b(how do I|how to)\s+(code|implement|write|debug|test)\b/i,
+      /\b(install|pip install|npm install|yarn add)\s+\w+/i,
       /\b(خطأ|مشكلة)\s+(في|بـ)?\s*(الكود|البرنامج|الدالة)\b/i,
     ],
-    toolsPreferred: ['code_execution'],
+    toolsPreferred: ['code_execution', 'file_manager', 'shell'],
   },
   {
     slug: 'research',
@@ -69,15 +71,17 @@ const AGENT_VOCABS: AgentVocab[] = [
       'research', 'search', 'find', 'investigate', 'gather', 'sources', 'cite',
       'study', 'survey', 'literature', 'paper', 'article', 'news', 'trends',
       'compare', 'comparison', 'benchmark', 'evaluate options',
+      'read', 'scrape', 'extract', 'content',
       'بحث', 'ابحث', 'معلومات', 'مصادر', 'استقصاء', 'دراسة', 'مقارنة', 'اخبار',
-      'تقرير', 'تتبع', 'جمع معلومات', 'ابحث عن',
+      'تقرير', 'تتبع', 'جمع معلومات', 'ابحث عن', 'اقرأ',
     ],
     patterns: [
       /\b(find|search|look up|investigate)\s+(information|data|sources|facts|articles|papers|news)\b/i,
       /\bwhat('s| is| are)\s+(the|current|latest)\s+(news|trends|state|status)\b/i,
+      /\b(scrape|read|fetch)\s+(the\s+)?(url|page|article|website|content)\b/i,
       /\b(ابحث|بحث)\s+(عن|في)\b/i,
     ],
-    toolsPreferred: ['web_search', 'http_request', 'browser'],
+    toolsPreferred: ['web_search', 'web_scrape', 'http_request', 'browser'],
   },
   {
     slug: 'reasoning',
@@ -247,10 +251,13 @@ function detectTools(message: string): string[] {
   const tools: string[] = [];
   if (/\b(calculate|compute|\d+\s*[+\-*/x×÷]\s*\d+|equation|formula)\b/i.test(message)) tools.push('calculator');
   if (/\b(http|url|fetch|api call|webhook)\b/i.test(message)) tools.push('http_request');
-  if (/\b(search|google|find online|web)\b/i.test(message)) tools.push('web_search');
+  if (/\b(search|google|find online|web|بحث|ابحث)\b/i.test(message)) tools.push('web_search');
+  if (/\b(scrape|read page|read url|extract content|اقرأ|استخرج)\b/i.test(message)) tools.push('web_scrape');
   if (/\b(browser|click|visit website|scrape)\b/i.test(message)) tools.push('browser');
   if (/\b(remember|recall|memory|save this|note this)\b/i.test(message)) tools.push('memory_store', 'memory_search');
-  if (/\b(run code|execute code|python|javascript|typescript script|repl)\b/i.test(message)) tools.push('code_execution');
+  if (/\b(run code|execute code|python|javascript|typescript|repl|كود|تنفيذ كود)\b/i.test(message)) tools.push('code_execution');
+  if (/\b(file|read file|write file|edit file|delete file|ملف|اكتب ملف|اقرأ ملف)\b/i.test(message)) tools.push('file_manager');
+  if (/\b(shell|bash|terminal|command line|pip install|npm install|طرفية|اوامر)\b/i.test(message)) tools.push('shell');
   return tools;
 }
 

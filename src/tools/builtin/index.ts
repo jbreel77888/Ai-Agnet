@@ -1,5 +1,7 @@
 /**
- * Built-in Tools — calculator, http_request, memory_search, memory_store, web_search
+ * Built-in Tools — calculator, http_request, memory_search, memory_store,
+ * web_search (Tavily), web_scrape (Jina), code_execution (Tensorlake stateful),
+ * file_manager, shell
  */
 import type { ITool } from '../registry';
 import type { ToolResult, ToolContext } from '../../types';
@@ -181,9 +183,14 @@ export class MemoryStoreTool implements ITool {
   }
 }
 
+/**
+ * @deprecated Use TavilySearchTool from ./tavily.ts instead.
+ * The old DuckDuckGo web_search was unreliable and returned almost no results.
+ * Kept here as a fallback only when TAVILY_API_KEY is not set.
+ */
 export class WebSearchTool implements ITool {
   readonly name = 'web_search';
-  readonly description = 'Search the web for current information. Returns titles, URLs, and snippets.';
+  readonly description = 'Search the web (fallback DuckDuckGo — limited results). When TAVILY_API_KEY is set, the TavilySearchTool is registered instead.';
   readonly category = 'builtin';
   readonly schema = {
     type: 'object',
@@ -193,7 +200,6 @@ export class WebSearchTool implements ITool {
   validate(args: any) { return args?.query ? { valid: true } : { valid: false, errors: ['query required'] }; }
   async execute(args: { query: string; max_results?: number }, _ctx: ToolContext): Promise<ToolResult> {
     const max = args.max_results || 5;
-    // DuckDuckGo fallback (no API key needed)
     try {
       const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(args.query)}&format=json&no_html=1`, { signal: AbortSignal.timeout(10000) });
       const data = await res.json() as any;
@@ -208,35 +214,75 @@ export class WebSearchTool implements ITool {
 export function registerBuiltinTools(): void {
   const { getToolRegistry } = require('../registry');
   const registry = getToolRegistry();
+
+  // ── Core tools (always available) ──────────────────────────────────────
   registry.register(new CalculatorTool());
   registry.register(new HttpRequestTool());
   registry.register(new MemorySearchTool());
   registry.register(new MemoryStoreTool());
-  registry.register(new WebSearchTool());
 
-  // Register Tensorlake sandbox tool if API key is available
+  // ── Web search: prefer Tavily, fall back to DuckDuckGo ────────────────
+  if (process.env.TAVILY_API_KEY) {
+    try {
+      const { TavilySearchTool } = require('./tavily');
+      registry.register(new TavilySearchTool());
+      console.log('[tools] Registered Tavily web_search');
+    } catch (err: any) {
+      console.warn('[tools] Tavily load failed, using DuckDuckGo:', err.message);
+      registry.register(new WebSearchTool());
+    }
+  } else {
+    registry.register(new WebSearchTool());
+  }
+
+  // ── Web scrape (Jina Reader — no API key needed) ───────────────────────
+  try {
+    const { WebScrapeTool } = require('./web_scrape');
+    registry.register(new WebScrapeTool());
+    console.log('[tools] Registered web_scrape (Jina Reader)');
+  } catch (err: any) {
+    console.warn('[tools] web_scrape registration failed:', err.message);
+  }
+
+  // ── Stateful sandbox tools (Tensorlake) ───────────────────────────────
   if (process.env.TENSORLAKE_API_KEY) {
     try {
       const { TensorlakeSandboxTool } = require('./tensorlake');
       registry.register(new TensorlakeSandboxTool());
-    } catch (err) {
-      console.warn('[tools] Failed to register Tensorlake tool:', err);
+      console.log('[tools] Registered code_execution (Tensorlake stateful)');
+    } catch (err: any) {
+      console.warn('[tools] Tensorlake code_execution failed:', err.message);
     }
+    try {
+      const { FileManagerTool } = require('./file_manager');
+      registry.register(new FileManagerTool());
+      console.log('[tools] Registered file_manager');
+    } catch (err: any) {
+      console.warn('[tools] file_manager registration failed:', err.message);
+    }
+    try {
+      const { ShellTool } = require('./shell');
+      registry.register(new ShellTool());
+      console.log('[tools] Registered shell');
+    } catch (err: any) {
+      console.warn('[tools] shell registration failed:', err.message);
+    }
+  } else {
+    console.log('[tools] Sandbox tools skipped (no TENSORLAKE_API_KEY)');
   }
 
-  // Register Browser tool (Playwright)
+  // ── Browser tool (Playwright) ─────────────────────────────────────────
   try {
     const { BrowserTool } = require('./browser');
     registry.register(new BrowserTool());
-  } catch (err) {
-    console.warn('[tools] Browser tool not registered:', err);
+  } catch (err: any) {
+    console.warn('[tools] Browser tool not registered:', err.message);
   }
 
-  // Register integration tools if configured
+  // ── GitHub integration ────────────────────────────────────────────────
   try {
     const { GitHubIntegration } = require('../../integrations/github');
     const gh = new GitHubIntegration();
-    // Register as a tool wrapper
     const ghTool = {
       name: 'github',
       description: 'Interact with GitHub: list repos, issues, create issues, get files',
