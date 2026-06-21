@@ -79,23 +79,15 @@ class AgentOrchestratorImpl {
   }
 
   async listSessions(userId: string): Promise<SessionInfo[]> {
-    const sessions = await db.select({
-      session: agentSessions,
-    })
-    .from(agentSessions)
-    .where(eq(agentSessions.userId, userId))
-    .orderBy(desc(agentSessions.lastActivityAt));
+    const sessions = await db.select()
+      .from(agentSessions)
+      .where(eq(agentSessions.userId, userId))
+      .orderBy(desc(agentSessions.lastActivityAt));
 
+    const registry = getAgentRegistry();
     const result: SessionInfo[] = [];
-    for (const { session } of sessions) {
-      const msgCount = await db.select({ count: db })
-        .from(messages)
-        .where(eq(messages.sessionId, session.id));
-
-      // Get agent info
-      const registry = getAgentRegistry();
+    for (const session of sessions) {
       const agent = registry.list().find(a => a.id === session.agentId);
-
       result.push({
         id: session.id,
         agentId: session.agentId,
@@ -107,7 +99,7 @@ class AgentOrchestratorImpl {
         totalCost: session.totalCost,
         startedAt: session.startedAt,
         lastActivityAt: session.lastActivityAt,
-        messageCount: 0, // Would need a count query
+        messageCount: 0,
       });
     }
     return result;

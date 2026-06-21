@@ -191,13 +191,20 @@ export function parseOpenAIStreamChunk(line: string): ChatChunk | null {
       result.delta = { content: delta.content };
     }
     if (delta.tool_calls) {
+      // Preserve index for accumulation, pass arguments as string fragments
       result.delta = {
         toolCalls: delta.tool_calls.map((tc: any) => ({
           id: tc.id,
+          index: tc.index,
           name: tc.function?.name,
-          arguments: tc.function?.arguments ? JSON.parse(tc.function.arguments) : undefined,
+          // Keep arguments as string for accumulation (LLM sends them in fragments)
+          arguments: tc.function?.arguments,
         })),
       };
+      // Merge with content if both exist
+      if (delta.content) {
+        result.delta = { content: delta.content, ...result.delta };
+      }
     }
     if (choice.finish_reason) {
       result.finishReason = choice.finish_reason;

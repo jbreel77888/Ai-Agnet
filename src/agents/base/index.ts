@@ -101,7 +101,8 @@ export class BaseAgent implements IAgent {
       let fullContent = '';
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
-      let toolCalls: ToolCall[] | undefined;
+      // Tool calls come in fragments during streaming — accumulate them
+      const toolCallAccumulator = new Map<number, { id: string; name: string; argumentsStr: string }>();
 
       try {
         const stream = providerManager.chatStream({
@@ -116,7 +117,19 @@ export class BaseAgent implements IAgent {
         for await (const chunk of stream) {
           if (this.cancelled) { yield { type: 'cancelled', reason: 'User cancelled' }; return; }
           if (chunk.delta?.content) { fullContent += chunk.delta.content; yield { type: 'message_chunk', content: chunk.delta.content }; }
-          if (chunk.delta?.toolCalls) { toolCalls = (toolCalls || []).concat(chunk.delta.toolCalls as any); }
+          if (chunk.delta?.toolCalls) {
+            for (const tc of chunk.delta.toolCalls as any[]) {
+              const idx = (tc as any).index ?? 0;
+              const existing = toolCallAccumulator.get(idx) || { id: '', name: '', argumentsStr: '' };
+              if (tc.id) existing.id = tc.id;
+              if (tc.name) existing.name = tc.name;
+              if (tc.arguments !== undefined) {
+                const argStr = typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments);
+                existing.argumentsStr += argStr;
+              }
+              toolCallAccumulator.set(idx, existing);
+            }
+          }
           if (chunk.usage) { totalInputTokens = chunk.usage.inputTokens; totalOutputTokens = chunk.usage.outputTokens; }
         }
       } catch (streamErr: any) {
@@ -127,12 +140,36 @@ export class BaseAgent implements IAgent {
           temperature: this.config.temperature,
           maxTokens: this.config.maxTokens,
           topP: this.config.topP,
+          tools: toolDefs,
         }, { userId: ctx.userId, sessionId: ctx.sessionId, agentId: this.id });
         fullContent = response.content;
         totalInputTokens = response.usage.inputTokens;
         totalOutputTokens = response.usage.outputTokens;
-        toolCalls = response.toolCalls;
+        if (response.toolCalls) {
+          response.toolCalls.forEach((tc, i) => {
+            toolCallAccumulator.set(i, {
+              id: tc.id,
+              name: tc.name,
+              argumentsStr: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments),
+            });
+          });
+        }
         yield { type: 'message_chunk', content: fullContent };
+      }
+
+      // Convert accumulated tool calls to ToolCall[]
+      let toolCalls: ToolCall[] | undefined;
+      if (toolCallAccumulator.size > 0) {
+        toolCalls = Array.from(toolCallAccumulator.values())
+          .filter(tc => tc.name) // Filter out unnamed fragments
+          .map(tc => {
+            let args: any = {};
+            if (tc.argumentsStr) {
+              try { args = JSON.parse(tc.argumentsStr); } catch { args = {}; }
+            }
+            return { id: tc.id || `call_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: tc.name, arguments: args };
+          });
+        if (toolCalls.length === 0) toolCalls = undefined;
       }
 
       // Execute tool calls if any

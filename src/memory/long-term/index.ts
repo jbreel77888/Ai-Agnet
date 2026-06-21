@@ -16,6 +16,17 @@ import type {
 } from './types';
 
 /**
+ * Get a fresh pg Pool — avoids Drizzle numeric type issues
+ */
+async function getPoolClient() {
+  const { Pool } = require('pg');
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('DATABASE_URL not set');
+  const pool = new Pool({ connectionString, max: 3, connectionTimeoutMillis: 5000 });
+  return pool;
+}
+
+/**
  * Cosine similarity between two vectors (1 = identical, 0 = orthogonal, -1 = opposite)
  */
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -32,18 +43,18 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 export function createLongTermMemory(): LongTermMemory {
   const store = async (input: StoreMemoryInput): Promise<MemoryRecord> => {
-    const [row] = await db.insert(memoryLong).values({
-      userId: input.userId,
-      agentId: input.agentId,
-      sessionId: input.sessionId,
-      fact: input.fact,
-      factType: input.factType,
-      importance: (input.importance ?? 0.5).toString(),
-      embedding: input.embedding as any,
-      metadata: input.metadata as any,
-    }).returning();
-
-    return rowToRecord(row);
+    const pool = await getPoolClient();
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        `INSERT INTO memory_long (user_id, agent_id, session_id, fact, fact_type, importance) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [input.userId || null, input.agentId || null, input.sessionId || null, input.fact, input.factType, (input.importance ?? 0.5).toString()]
+      );
+      return rowToRecord(result.rows[0]);
+    } finally {
+      client.release();
+      await pool.end();
+    }
   };
 
   const storeFact = async (fact: string, type: FactType, opts: StoreOpts = {}): Promise<MemoryRecord> => {
