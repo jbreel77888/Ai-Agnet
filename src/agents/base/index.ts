@@ -184,25 +184,24 @@ export class BaseAgent implements IAgent {
           traceId: crypto.randomUUID(),
         };
 
+        // Execute all tool calls and collect results
+        const toolResults: string[] = [];
         for (const tc of toolCalls) {
           yield { type: 'tool_call', toolName: tc.name, args: tc.arguments, toolCallId: tc.id };
           const result = await registry.execute(tc.name, tc.arguments, toolContext as any);
+          const resultStr = JSON.stringify(result.data || result.error);
           yield { type: 'tool_result', toolName: tc.name, result: result.data || result.error, durationMs: result.metadata?.durationMs || 0 };
-
-          // Add tool result to messages for follow-up
-          messages.push({
-            role: 'assistant',
-            content: fullContent,
-            toolCalls: [tc],
-          } as any);
-          messages.push({
-            role: 'tool',
-            content: JSON.stringify(result.data || result.error),
-            toolCallId: tc.id,
-          } as any);
+          toolResults.push(`Tool "${tc.name}" result: ${resultStr}`);
         }
 
-        // Get follow-up response with tool results
+        // For follow-up: use user message with tool results instead of tool role
+        // This avoids provider-specific issues (DeepSeek reasoning_content, tool_call_id, etc.)
+        messages.push({
+          role: 'user',
+          content: `I executed the tools you requested. Here are the results:\n\n${toolResults.join('\n\n')}\n\nPlease use these results to answer my original question.`,
+        } as any);
+
+        // Get follow-up response
         try {
           const followUp = await providerManager.chat({
             modelId, messages,
@@ -210,7 +209,7 @@ export class BaseAgent implements IAgent {
             temperature: this.config.temperature,
             maxTokens: this.config.maxTokens,
             topP: this.config.topP,
-            tools: toolDefs,
+            // Don't pass tools in follow-up to prevent infinite tool calling loops
           }, { userId: ctx.userId, sessionId: ctx.sessionId, agentId: this.id });
 
           fullContent += '\n\n' + followUp.content;
