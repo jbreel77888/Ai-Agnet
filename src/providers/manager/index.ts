@@ -146,8 +146,10 @@ export class ProviderManagerImpl implements ProviderManager {
 
       try {
         const result = await circuit.execute(async () => {
+          // CRITICAL: Use model.name (e.g., "nemotron-3-ultra-free") not model.id (UUID)
+          // The provider API expects the actual model name, not our internal ID
           const req = strategy.buildRequest(
-            { ...request, modelId, stream: false },
+            { ...request, modelId: model.name, stream: false },
             config.baseUrl,
             config.apiKey,
             config.headers,
@@ -238,10 +240,12 @@ export class ProviderManagerImpl implements ProviderManager {
       }
 
       const { config, strategy } = providerInfo;
+      const model = modelCache.get(modelId)!;
 
       try {
+        // CRITICAL: Use model.name (e.g., "nemotron-3-ultra-free") not model.id (UUID)
         const req = strategy.buildRequest(
-          { ...request, modelId, stream: true },
+          { ...request, modelId: model.name, stream: true },
           config.baseUrl,
           config.apiKey,
           config.headers,
