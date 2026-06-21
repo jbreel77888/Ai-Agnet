@@ -92,10 +92,10 @@
 ### 🟢 المرحلة 0 — إصلاحات حرجة فورية (Quick Wins)
 > أهداف سريعة لا تتطلب APIs خارجية، تُنجَز في 1-2 يوم.
 
-- [x] **0.1** حذف `prisma/schema.prisma` و `db/custom.db` — **تم 2026-06-22**
-- [x] **0.2** إزالة `@prisma/client` و `prisma` من `package.json` — **تم 2026-06-22**
-- [ ] **0.3** استبدال `calculator` tool (الذي يستخدم `Function('Math',...)` خطر XSS) بـ `mathjs` safer evaluator
-- [ ] **0.4** إضافة SSRF protection في `http_request` tool (block `localhost`, `169.254.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`)
+- [x] **0.1** حذف `prisma/schema.prisma` و `db/custom.db` — **تم 2026-06-22** (commit `e480fa3`)
+- [x] **0.2** إزالة `@prisma/client` و `prisma` من `package.json` — **تم 2026-06-22** (commit `e480fa3`)
+- [x] **0.3** استبدال `calculator` tool (الذي يستخدم `Function('Math',...)` خطر XSS) بـ whitelist validator آمن — **تم 2026-06-22** (commit `feebe13`)
+- [x] **0.4** إضافة SSRF protection في `http_request` tool (block localhost/private IPs/metadata) — **تم 2026-06-22** (commit `feebe13`)
 - [ ] **0.5** التحقق من `JWT_SECRET` في Railway (يجب أن يكون `openssl rand -hex 32`)
 - [ ] **0.6** نقل `playwright` من `dependencies` إلى `optionalDependencies` (يوفّر 200MB)
 - [ ] **0.7** فحص `z-ai-web-dev-sdk` في package.json — حذفه إن لم يُستخدم
@@ -172,18 +172,18 @@
 - [x] **3.2** بناء `AgentRouter` (`src/agents/router/index.ts`) — **تم 2026-06-22**
 - [x] **3.3** إضافة `agent_selected` SSE event — **تم 2026-06-22**
 - [x] **3.4** عرض الـ agent ديناميكياً في MessageBubble (لون + أيقونة + badge) — **تم 2026-06-22**
-- [ ] **3.5** بناء `AgentEngine.execute()` الحقيقي بـ ReAct loop:
-  - `while (step < maxSteps && !completed)` حلقة
-  - في كل خطوة: LLM call → tool calls → feedback → repeat
-  - `maxStepsPerRun = 20` (configurable per agent)
-  - self-correction عند فشل أداة
+- [x] **3.5** بناء `AgentEngine.execute()` الحقيقي بـ ReAct loop — **تم 2026-06-22** (commit `feebe13`)
+  - `while (step < maxSteps && !completed)` حلقة ✓
+  - في كل خطوة: LLM call → tool calls → feedback → repeat ✓
+  - `maxStepsPerRun = 20` (configurable per agent) ✓
+  - self-correction عند فشل أداة ✓ (error in tool result → fed back to LLM)
 - [ ] **3.6** تفعيل `handoff_request` event:
   - عند إحالة من planner → research، emit event
   - TaskTimeline يعرض handoff كـ step
 - [ ] **3.7** تفعيل `subagent_spawned` event:
   - وكيل planner يُنشئ sub-agent متوازي (e.g., research + coding)
   - SubAgentPool manages lifecycle
-- [ ] **3.8** إصلاح تمرير نتائج الأدوات لـ `role: 'tool'` بدل `role: 'user'` hack
+- [x] **3.8** إصلاح تمرير نتائج الأدوات لـ `role: 'tool'` بدل `role: 'user'` hack — **تم 2026-06-22** (commit `feebe13`)
 - [ ] **3.9** إضافة Budget guard:
   - `maxTotalSteps = 100` per session
   - `maxTotalCost = $10` per session
@@ -382,23 +382,27 @@ memory_store:      pgvector + embeddings
 
 | التاريخ | المهمة | الحالة | Commit | ملاحظات |
 |---|---|---|---|---|
-| 2026-06-22 | 0.1 — حذف prisma/schema.prisma | ✅ | هذا التحديث | تنظيف |
-| 2026-06-22 | 0.2 — إزالة @prisma/client من package.json | ✅ | هذا التحديث | تنظيف |
+| 2026-06-22 | 0.1 — حذف prisma/schema.prisma | ✅ | `e480fa3` | تنظيف |
+| 2026-06-22 | 0.2 — إزالة @prisma/client من package.json | ✅ | `e480fa3` | تنظيف |
+| 2026-06-22 | 0.3 — calculator XSS protection (whitelist regex) | ✅ | `feebe13` | أمن |
+| 2026-06-22 | 0.4 — SSRF protection في http_request | ✅ | `feebe13` | أمن (block localhost/metadata IPs) |
 | 2026-06-22 | 3.1 — تفعيل 9 وكلاء في DB | ✅ | SQL apply | تم سابقاً |
 | 2026-06-22 | 3.2 — بناء AgentRouter | ✅ | `fb39555` | يعمل بـ Arabic+English |
 | 2026-06-22 | 3.3 — إضافة agent_selected SSE event | ✅ | `fb39555` | — |
 | 2026-06-22 | 3.4 — per-agent avatar في MessageBubble | ✅ | `fb39555` | 9 ألوان + أيقونات |
+| 2026-06-22 | 3.5 — ReAct Loop في BaseAgent (multi-step) | ✅ | `feebe13` | maxSteps=20, self-correction |
+| 2026-06-22 | 3.8 — role:'tool' بدل role:'user' hack | ✅ | `feebe13` | OpenAI standard + truncate |
 | — | باقي المهام | ⏳ | — | انظر الجداول أعلاه |
 
 ---
 
 ## 🎯 الأولويات القصوى التالية (Top 5 Next Actions)
 
-1. **المرحلة 1.A-C**: بناء Stateful Sandbox + file_manager + code_interpreter (يتطلب `E2B_API_KEY` أو `TENSORLAKE_API_KEY`)
-2. **المرحلة 3.5**: بناء ReAct Loop في BaseAgent (بدون APIs خارجية، يمكن البدء فوراً)
+1. ~~**المرحلة 3.5**: بناء ReAct Loop في BaseAgent~~ ✅ **تم** (commit `feebe13`)
+2. **المرحلة 1.A-C**: بناء Stateful Sandbox + file_manager + code_interpreter (يتطلب `E2B_API_KEY` أو `TENSORLAKE_API_KEY`)
 3. **المرحلة 2.1**: استبدال web_search بـ Tavily (يتطلب `TAVILY_API_KEY`)
 4. **المرحلة 4.1-4.2**: بناء background worker للمهام الطويلة (يمنع Railway timeout)
-5. **المرحلة 0.3-0.9**: إصلاحات أمنية سريعة (calculator XSS, SSRF, rate limit)
+5. ~~**المرحلة 0.3-0.9**: إصلاحات أمنية سريعة (calculator XSS, SSRF)~~ — 0.3 و 0.4 ✅ تم، تبقى 0.5-0.9
 
 ---
 
