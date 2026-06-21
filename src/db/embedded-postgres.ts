@@ -17,10 +17,14 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
-// Load .env if not already loaded
-try {
-  dotenv.config();
-} catch {}
+// Load .env only in development (in production, Railway provides env vars)
+// CRITICAL: dotenv.config() would override Railway's DATABASE_URL with the
+// .env file's value (which points to localhost:5433 embedded PG)
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    dotenv.config();
+  } catch {}
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.PG_DATA_DIR || path.join(process.cwd(), 'data', 'db');

@@ -16,13 +16,19 @@ import { getAgentRegistry } from '../registry';
 import type { AgentEvent, AgentContext, ChatMessage } from '../../types';
 
 /**
- * Get a fresh pg client from the pool — uses process.env.DATABASE_URL
- * which is updated by instrumentation on startup
+ * Get a fresh pg Pool using the correct DATABASE_URL
+ * In production (Railway), use the env var directly (set by Railway)
+ * In development, use the embedded PG URL
  */
 async function getPoolClient() {
-  // Re-create pool if DATABASE_URL changed (e.g., after instrumentation)
   const { Pool } = require('pg');
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+  // In production, DATABASE_URL is set by Railway and should point to Railway Postgres
+  // In development, it's set by instrumentation to localhost:5433
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL not set');
+  }
+  const pool = new Pool({ connectionString, max: 5, connectionTimeoutMillis: 5000 });
   return pool;
 }
 
