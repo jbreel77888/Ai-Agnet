@@ -76,6 +76,30 @@ export function toOpenAIMessages(request: ChatRequest): any[] {
   }
 
   for (const msg of request.messages) {
+    // Handle tool role messages (tool results) — these have string content + toolCallId
+    if (msg.role === 'tool' && (msg as any).toolCallId) {
+      messages.push({
+        role: 'tool',
+        tool_call_id: (msg as any).toolCallId,
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+      });
+      continue;
+    }
+
+    // Handle assistant messages with tool_calls + string content
+    if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
+      messages.push({
+        role: 'assistant',
+        content: typeof msg.content === 'string' ? (msg.content || null) : null,
+        tool_calls: msg.toolCalls.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+        })),
+      });
+      continue;
+    }
+
     if (typeof msg.content === 'string') {
       messages.push({ role: msg.role, content: msg.content });
     } else {
