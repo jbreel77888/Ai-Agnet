@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   Bot, Cpu, Boxes, Activity, LogOut, ExternalLink,
   Server, Shield, CheckCircle2, XCircle, RefreshCw,
-  Wrench, FileText,
+  Wrench, FileText, Workflow, HardDrive,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -72,6 +72,8 @@ export default function AdminDashboard() {
     { title: 'Chat', desc: 'Chat with agents — streaming + tools', icon: Activity, href: '/admin/chat', color: 'text-purple-500' },
     { title: 'Tools', desc: 'Built-in tools (calculator, web search, memory, HTTP)', icon: Wrench, href: '/admin/tools', color: 'text-amber-500' },
     { title: 'Documents', desc: 'Upload documents for RAG semantic search', icon: FileText, href: '/admin/documents', color: 'text-cyan-500' },
+    { title: 'Workflows', desc: 'DAG workflow engine + run monitoring', icon: Workflow, href: '/admin/workflows', color: 'text-rose-500' },
+    { title: 'Storage', desc: 'Upload and manage files', icon: HardDrive, href: '/admin/storage', color: 'text-indigo-500' },
   ];
 
   return (
@@ -146,7 +148,7 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Admin sections */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
           {adminCards.map((card) => (
             <Card key={card.title} className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push(card.href)}>
               <CardHeader>
