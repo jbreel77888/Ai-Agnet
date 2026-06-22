@@ -263,15 +263,14 @@ export class MemoryStoreTool implements ITool {
         console.warn('[memory_store] Embedding generation failed:', err.message);
       }
 
-      // Store with embedding (both JSONB + vector column)
+      // Store fact (insert without embedding first, then update if we have one)
       const { Pool } = require('pg');
       const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
       try {
-        const { embeddingToPgVector } = await import('../../embeddings');
-        const embeddingVecStr = embedding ? embeddingToPgVector(embedding) : null;
+        // Insert the fact
         const result = await pool.query(
-          `INSERT INTO memory_long (user_id, agent_id, session_id, fact, fact_type, importance, embedding, embedding_model, embedding_vec)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8::vector)
+          `INSERT INTO memory_long (user_id, agent_id, session_id, fact, fact_type, importance)
+           VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING id, fact`,
           [
             ctx.userId || null,
@@ -280,40 +279,22 @@ export class MemoryStoreTool implements ITool {
             args.fact,
             args.type || 'custom',
             (args.importance ?? 0.5).toString(),
-            embedding ? JSON.stringify(embedding) : null,
-            embeddingVecStr,
           ]
         );
-        // Note: the $8::vector cast will fail if embeddingVecStr is null, so handle separately
-        if (result.rows.length === 0 && embedding) {
-          // Fallback: insert without vector cast
+        const record = result.rows[0];
+
+        // If we have an embedding, update the record with it
+        if (embedding && record) {
+          const { embeddingToPgVector } = await import('../../embeddings');
+          const embeddingVecStr = embeddingToPgVector(embedding);
           await pool.query(
-            `INSERT INTO memory_long (user_id, agent_id, session_id, fact, fact_type, importance, embedding, embedding_model)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING id, fact`,
-            [
-              ctx.userId || null,
-              ctx.agentId || null,
-              ctx.sessionId || null,
-              args.fact,
-              args.type || 'custom',
-              (args.importance ?? 0.5).toString(),
-              JSON.stringify(embedding),
-              'text-embedding-3-small',
-            ]
+            `UPDATE memory_long
+             SET embedding = $1, embedding_model = $2, embedding_vec = $3::vector
+             WHERE id = $4`,
+            [JSON.stringify(embedding), 'text-embedding-3-small', embeddingVecStr, record.id]
           );
         }
-        // Update embedding_vec separately if we have it
-        if (embedding) {
-          const record = result.rows[0];
-          if (record) {
-            await pool.query(
-              `UPDATE memory_long SET embedding_vec = $1::vector, embedding_model = 'text-embedding-3-small' WHERE id = $2`,
-              [embeddingVecStr, record.id]
-            );
-          }
-        }
-        const record = result.rows[0] || { fact: args.fact };
+
         return {
           success: true,
           data: {
