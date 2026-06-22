@@ -130,7 +130,10 @@
   - يدعم Python + Node.js + Bash ✓
   - يُنفَّذ داخل نفس الـ sandbox (حالة مستمرة) ✓
   - يُرجع stdout/stderr + exit code + duration ✓
-- [ ] **1.8** دعم matplotlib → artifacts (Charts كصور PNG)
+- [x] **1.8** دعم matplotlib → artifacts (Charts كصور PNG) — **تم 2026-06-22** (commit `fad70b6`)
+  - code_execution يكتشف الملفات المُولّدة تلقائياً (png/jpg/svg/csv/html/json)
+  - يقرأ الملفات < 2MB ويرجعها كـ data URLs
+  - الـ UI يعرضها كـ artifacts (صور/جداول/HTML live preview)
 - [x] **1.9** دعم `pip install` و `npm install` (يُحفظ في نفس الـ sandbox) — **تم** (عبر shell tool)
 
 #### 1.D — Shell/Terminal Tool (جديد)
@@ -141,11 +144,13 @@
   - blocks dangerous commands (rm -rf /, mkfs, fork bombs) ✓
 
 #### 1.E — Artifact Live Preview (تحسين UI)
-- [ ] **1.11** تحديث `ArtifactViewer.tsx`:
-  - HTML artifacts: render في `<iframe sandbox>` مع live preview
-  - React artifacts: transpile مع Babel standalone و render
-  - CSV: عرض كجدول تفاعلي
-  - PNG/JPG: gallery مع zoom
+- [x] **1.11** تحديث `ArtifactViewer.tsx`: — **تم 2026-06-22** (commit `fad70b6`)
+  - HTML artifacts: render في `<iframe sandbox>` مع live preview ✓
+  - React artifacts: (deferred — requires Babel standalone, heavy)
+  - CSV: عرض كجدول تفاعلي ✓ (sticky header, hover, row×col count)
+  - PNG/JPG: gallery مع zoom ✓ (existing image support)
+  - SVG: render inline ✓ (dangerouslySetInnerHTML)
+  - Auto-detection: detectType() from extension + content ✓
 
 ### 🟡 المرحلة 2 — Web & Research Tools (P1)
 > الهدف: وكيل قادر على البحث الحقيقي والاستقصاء.
@@ -158,10 +163,14 @@
 - [x] **2.2** إضافة `web_scrape` tool باستخدام **Jina Reader**: — **تم 2026-06-22** (commit `281a263`)
   - يحوّل أي صفحة لـ Markdown نظيف ✓
   - مجاني، لا يتطلب API key ✓
-- [ ] **2.3** تحديث `browser` tool:
-  - إعادة استخدام browser context عبر sessions
-  - screenshot بعد كل عملية (navigate/click/fill/scroll)
-  - screenshot streaming للواجهة (WebSocket أو SSE)
+- [x] **2.3** تحديث `browser` tool: — **تم 2026-06-22** (commit `fad70b6`)
+  - إعادة استخدام browser context عبر sessions ✓ (per-session Map)
+  - screenshot بعد كل عملية ✓ (existing, now stateful)
+  - screenshot streaming للواجهة (WebSocket أو SSE) ⚠️ (deferred — current screenshot in tool result)
+  - 16 actions total (was 8): navigate, screenshot, extract_text, click, fill, evaluate, get_title, scroll, go_back, go_forward, get_url, wait_for, press_key, hover, select_option, close ✓
+  - Health check on reuse: if page crashed, recreate ✓
+  - Idle session cleanup (10 min timeout) ✓
+  - closeSessionBrowser() called on session delete ✓
 - [x] **2.4** إصلاح Tool Registry (`src/tools/registry/index.ts`): — **تم 2026-06-22** (commit `58a3b7e`, `7adc3ba`)
   - إضافة `permissions` check (RBAC per tool) ✓ (`requiredPermissions` field)
   - إضافة `rateLimiter` per user per tool ✓ (default 60/min, configurable)
@@ -413,6 +422,9 @@ memory_store:      pgvector + embeddings
 | 2026-06-22 | 0.7 — Remove unused z-ai-web-dev-sdk | ✅ | `58a3b7e` | Not used in src/ |
 | 2026-06-22 | 0.9 — Rate limit on chat (30/min) + auth (5/min/IP) | ✅ | `58a3b7e` | 429 + Retry-After headers |
 | 2026-06-22 | fix — audit_logs INSERT column count mismatch | ✅ | `7adc3ba` | Use NOW() for created_at |
+| 2026-06-22 | 2.3 — Stateful browser tool (per-session context) | ✅ | `fad70b6` | 16 actions, idle cleanup, health check |
+| 2026-06-22 | 1.8 — matplotlib chart → artifact detection | ✅ | `fad70b6` | Auto-detect png/csv/html/svg in sandbox |
+| 2026-06-22 | 1.11 — Artifact live preview (HTML/CSV/SVG) | ✅ | `fad70b6` | iframe + table + inline SVG |
 | — | باقي المهام | ⏳ | — | انظر الجداول أعلاه |
 
 ---
@@ -420,10 +432,10 @@ memory_store:      pgvector + embeddings
 ## 🎯 الأولويات القصوى التالية (Top 5 Next Actions)
 
 1. ~~**المرحلة 3.5**: بناء ReAct Loop في BaseAgent~~ ✅ **تم** (commit `feebe13`)
-2. ~~**المرحلة 1.A-C**: Stateful Sandbox + file_manager + code_execution~~ ✅ **تم** (commit `281a263`, `2447930`)
-3. ~~**المرحلة 2.1**: استبدال web_search بـ Tavily~~ ✅ **تم** (commit `281a263`)
-4. **المرحلة 4.1-4.2**: بناء background worker للمهام الطويلة (يمنع Railway timeout)
-5. ~~**المرحلة 0.3-0.9**: إصلاحات أمنية سريعة (calculator XSS, SSRF)~~ — 0.3 و 0.4 ✅ تم، تبقى 0.5-0.9
+2. ~~**المرحلة 1.A-D**: Stateful Sandbox + file_manager + shell + browser~~ ✅ **تم** (commits `281a263`, `2447930`, `fad70b6`)
+3. ~~**المرحلة 2.1-2.4**: Tavily + Jina + stateful browser + tool registry hardening~~ ✅ **تم** (commits `281a263`, `58a3b7e`, `fad70b6`)
+4. **المرحلة 4.1-4.2**: بناء background worker للمهام الطويلة (يمنع Railway timeout بعد 5 دقائق)
+5. **المرحلة 5**: RAG + pgvector + embeddings (يتطلب OpenAI API key — مُعَدّ بالفعل)
 
 ---
 
