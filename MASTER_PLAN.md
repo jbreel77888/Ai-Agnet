@@ -96,11 +96,14 @@
 - [x] **0.2** إزالة `@prisma/client` و `prisma` من `package.json` — **تم 2026-06-22** (commit `e480fa3`)
 - [x] **0.3** استبدال `calculator` tool (الذي يستخدم `Function('Math',...)` خطر XSS) بـ whitelist validator آمن — **تم 2026-06-22** (commit `feebe13`)
 - [x] **0.4** إضافة SSRF protection في `http_request` tool (block localhost/private IPs/metadata) — **تم 2026-06-22** (commit `feebe13`)
-- [ ] **0.5** التحقق من `JWT_SECRET` في Railway (يجب أن يكون `openssl rand -hex 32`)
-- [ ] **0.6** نقل `playwright` من `dependencies` إلى `optionalDependencies` (يوفّر 200MB)
-- [ ] **0.7** فحص `z-ai-web-dev-sdk` في package.json — حذفه إن لم يُستخدم
+- [x] **0.5** التحقق من `JWT_SECRET` في Railway (يجب أن يكون `openssl rand -hex 32`) — **تم 2026-06-22** (verified: 32-byte hex = 256-bit, strong ✓)
+- [x] **0.6** نقل `playwright` من `dependencies` إلى `optionalDependencies` (يوفّر 200MB) — **تم 2026-06-22** (commit `58a3b7e`)
+- [x] **0.7** فحص `z-ai-web-dev-sdk` في package.json — حذفه إن لم يُستخدم — **تم 2026-06-22** (commit `58a3b7e`, غير مستخدم في src/)
 - [ ] **0.8** حفظ `tool_calls` في DB بشكل streaming (الآن تُحفظ بعد انتهاء الرسالة فقط)
-- [ ] **0.9** إضافة rate limit على `/api/chat` و `/api/sessions/[id]/messages` (e.g., 30 req/min per user)
+- [x] **0.9** إضافة rate limit على `/api/chat` و `/api/sessions/[id]/messages` (e.g., 30 req/min per user) — **تم 2026-06-22** (commit `58a3b7e`)
+  - `/api/sessions/[id]/messages`: 30 msgs/min/user + 429 with Retry-After header ✓
+  - `/api/auth/login`: 5 attempts/min/IP (brute force protection) ✓
+  - Generic `checkRateLimit()` utility in `src/lib/rate-limit.ts` ✓
 
 ### 🔴 المرحلة 1 — Computer/Sandbox Foundation (P0)
 > الهدف: تحويل المنصة من "chatbot مع tools" إلى "Manus-like agent computer".
@@ -159,13 +162,13 @@
   - إعادة استخدام browser context عبر sessions
   - screenshot بعد كل عملية (navigate/click/fill/scroll)
   - screenshot streaming للواجهة (WebSocket أو SSE)
-- [ ] **2.4** إصلاح Tool Registry (`src/tools/registry/index.ts`):
-  - إضافة `permissions` check (RBAC per tool)
-  - إضافة `rateLimiter` per user per tool
-  - إضافة `timeout` per tool (default 30s)
-  - إضافة `auditLog` write لكل تنفيذ
-  - إضافة `costTracker` per tool
-  - إضافة `allowedArgs` / `deniedArgs` constraints
+- [x] **2.4** إصلاح Tool Registry (`src/tools/registry/index.ts`): — **تم 2026-06-22** (commit `58a3b7e`, `7adc3ba`)
+  - إضافة `permissions` check (RBAC per tool) ✓ (`requiredPermissions` field)
+  - إضافة `rateLimiter` per user per tool ✓ (default 60/min, configurable)
+  - إضافة `timeout` per tool (default 30s) ✓ (max 5min)
+  - إضافة `auditLog` write لكل تنفيذ ✓ (batched, async, to `audit_logs` table)
+  - إضافة `costTracker` per tool ✓ (optional `costEstimate` field)
+  - إضافة `allowedArgs` / `deniedArgs` constraints ⚠️ (not yet — use tool.validate())
 
 ### 🔵 المرحلة 3 — Multi-Agent Orchestration (P0/P1)
 > الهدف: تفعيل الـ 9 وكلاء فعلياً مع handoffs وsub-agents.
@@ -404,6 +407,12 @@ memory_store:      pgvector + embeddings
 | 2026-06-22 | 2.2 — web_scrape via Jina Reader | ✅ | `281a263` | Free, no API key, markdown output |
 | 2026-06-22 | fix — await import() instead of require() | ✅ | `7004de2` | Fixed "t is not a constructor" |
 | 2026-06-22 | fix — /home/tl-user (correct sandbox home) | ✅ | `2447930` | Was /home/user (doesn't exist) |
+| 2026-06-22 | 2.4 — Tool Registry hardening (perms/rate/timeout/audit/cost) | ✅ | `58a3b7e` | Audit to audit_logs table |
+| 2026-06-22 | 0.5 — JWT_SECRET verification (256-bit hex) | ✅ | verified | No change needed |
+| 2026-06-22 | 0.6 — playwright → optionalDependencies | ✅ | `58a3b7e` | Saves ~200MB |
+| 2026-06-22 | 0.7 — Remove unused z-ai-web-dev-sdk | ✅ | `58a3b7e` | Not used in src/ |
+| 2026-06-22 | 0.9 — Rate limit on chat (30/min) + auth (5/min/IP) | ✅ | `58a3b7e` | 429 + Retry-After headers |
+| 2026-06-22 | fix — audit_logs INSERT column count mismatch | ✅ | `7adc3ba` | Use NOW() for created_at |
 | — | باقي المهام | ⏳ | — | انظر الجداول أعلاه |
 
 ---
