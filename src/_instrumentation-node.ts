@@ -197,7 +197,7 @@ async function seedInitialData(connectionString: string): Promise<void> {
     // Register built-in tools
     try {
       const { registerBuiltinTools } = require('./tools/builtin');
-      registerBuiltinTools();
+      await registerBuiltinTools();
     } catch (err) {
       console.error('[instrumentation:node] Failed to register tools:', err);
     }

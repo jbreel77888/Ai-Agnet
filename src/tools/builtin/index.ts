@@ -211,7 +211,7 @@ export class WebSearchTool implements ITool {
   }
 }
 
-export function registerBuiltinTools(): void {
+export async function registerBuiltinTools(): Promise<void> {
   const { getToolRegistry } = require('../registry');
   const registry = getToolRegistry();
 
@@ -224,8 +224,8 @@ export function registerBuiltinTools(): void {
   // ── Web search: prefer Tavily, fall back to DuckDuckGo ────────────────
   if (process.env.TAVILY_API_KEY) {
     try {
-      const { TavilySearchTool } = require('./tavily');
-      registry.register(new TavilySearchTool());
+      const tavilyModule = await import('./tavily');
+      registry.register(new tavilyModule.TavilySearchTool());
       console.log('[tools] Registered Tavily web_search');
     } catch (err: any) {
       console.warn('[tools] Tavily load failed, using DuckDuckGo:', err.message);
@@ -237,8 +237,8 @@ export function registerBuiltinTools(): void {
 
   // ── Web scrape (Jina Reader — no API key needed) ───────────────────────
   try {
-    const { WebScrapeTool } = require('./web_scrape');
-    registry.register(new WebScrapeTool());
+    const scrapeModule = await import('./web_scrape');
+    registry.register(new scrapeModule.WebScrapeTool());
     console.log('[tools] Registered web_scrape (Jina Reader)');
   } catch (err: any) {
     console.warn('[tools] web_scrape registration failed:', err.message);
@@ -247,22 +247,22 @@ export function registerBuiltinTools(): void {
   // ── Stateful sandbox tools (Tensorlake) ───────────────────────────────
   if (process.env.TENSORLAKE_API_KEY) {
     try {
-      const { TensorlakeSandboxTool } = require('./tensorlake');
-      registry.register(new TensorlakeSandboxTool());
+      const tensorlakeModule = await import('./tensorlake');
+      registry.register(new tensorlakeModule.TensorlakeSandboxTool());
       console.log('[tools] Registered code_execution (Tensorlake stateful)');
     } catch (err: any) {
       console.warn('[tools] Tensorlake code_execution failed:', err.message);
     }
     try {
-      const { FileManagerTool } = require('./file_manager');
-      registry.register(new FileManagerTool());
+      const fileModule = await import('./file_manager');
+      registry.register(new fileModule.FileManagerTool());
       console.log('[tools] Registered file_manager');
     } catch (err: any) {
       console.warn('[tools] file_manager registration failed:', err.message);
     }
     try {
-      const { ShellTool } = require('./shell');
-      registry.register(new ShellTool());
+      const shellModule = await import('./shell');
+      registry.register(new shellModule.ShellTool());
       console.log('[tools] Registered shell');
     } catch (err: any) {
       console.warn('[tools] shell registration failed:', err.message);
@@ -273,15 +273,15 @@ export function registerBuiltinTools(): void {
 
   // ── Browser tool (Playwright) ─────────────────────────────────────────
   try {
-    const { BrowserTool } = require('./browser');
-    registry.register(new BrowserTool());
+    const browserModule = await import('./browser');
+    registry.register(new browserModule.BrowserTool());
   } catch (err: any) {
     console.warn('[tools] Browser tool not registered:', err.message);
   }
 
   // ── GitHub integration ────────────────────────────────────────────────
   try {
-    const { GitHubIntegration } = require('../../integrations/github');
+    const { GitHubIntegration } = await import('../../integrations/github');
     const gh = new GitHubIntegration();
     const ghTool = {
       name: 'github',

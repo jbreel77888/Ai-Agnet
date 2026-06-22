@@ -11,8 +11,16 @@ import type { ToolContext } from '../../../types';
 
 // Register built-in tools on first load
 let initialized = false;
-function ensureTools() {
-  if (!initialized) { registerBuiltinTools(); initialized = true; }
+let initPromise: Promise<void> | null = null;
+function ensureTools(): Promise<void> {
+  if (initialized) return Promise.resolve();
+  if (!initPromise) {
+    initPromise = registerBuiltinTools().then(() => { initialized = true; }).catch(err => {
+      console.error('[api/tools] Failed to register tools:', err);
+      initPromise = null; // allow retry
+    });
+  }
+  return initPromise;
 }
 
 async function getUser(req: NextRequest) {
@@ -27,7 +35,7 @@ async function getUser(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const user = await getUser(req);
   if (!user) return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED' } }, { status: 401 });
-  ensureTools();
+  await ensureTools();
   const registry = getToolRegistry();
   const tools = registry.list().map(t => ({ name: t.name, description: t.description, category: t.category, schema: t.schema }));
   return NextResponse.json({ success: true, data: { tools } });
@@ -41,7 +49,7 @@ const executeSchema = z.object({
 export async function POST(req: NextRequest) {
   const user = await getUser(req);
   if (!user) return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED' } }, { status: 401 });
-  ensureTools();
+  await ensureTools();
 
   try {
     const body = await req.json();

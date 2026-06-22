@@ -31,7 +31,7 @@ export function buildAgentGraph(agentConfig: {
   systemPrompt: string; modelId: string; agentId: string; userId: string; sessionId: string;
   temperature: number; maxTokens: number;
 }): CompiledGraph<AgentGraphState> {
-  try { registerBuiltinTools(); } catch {}
+  try { await registerBuiltinTools(); } catch {}
   const registry = getToolRegistry();
   const toolDefs = registry.toOpenAITools();
 
@@ -127,7 +127,7 @@ export function buildAgentGraph(agentConfig: {
 export async function* executeAgentGraph(graph: CompiledGraph<AgentGraphState>, input: {
   userQuery: string; systemPrompt: string; modelId: string; agentId: string; userId: string; sessionId: string; messages: ChatMessage[];
 }): AsyncIterable<AgentEvent> {
-  try { registerBuiltinTools(); } catch {}
+  try { await registerBuiltinTools(); } catch {}
   const registry = getToolRegistry();
   const tools = registry.toOpenAITools();
   const initialState: Partial<AgentGraphState> = {

@@ -198,7 +198,7 @@ class WorkflowEngineImpl {
       }
 
       case 'tool': {
-        try { registerBuiltinTools(); } catch {}
+        try { await registerBuiltinTools(); } catch {}
         const registry = getToolRegistry();
         const toolCtx = {
           userId: 'system', sessionId: runId, agentId: 'workflow',

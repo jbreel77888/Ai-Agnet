@@ -100,7 +100,7 @@ export class BaseAgent implements IAgent {
       let toolDefs: ToolDefinition[] | undefined;
       try {
         const { registerBuiltinTools } = await import('../../tools/builtin');
-        registerBuiltinTools(); // idempotent
+        await registerBuiltinTools(); // idempotent
         const registry = getToolRegistry();
         toolDefs = registry.toOpenAITools();
       } catch {}
