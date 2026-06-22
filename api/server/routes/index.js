@@ -38,6 +38,7 @@ const mcp = require('./mcp');
 const rum = require('./rum');
 
 module.exports = {
+  opencodezProxy,
   rum,
   mcp,
   auth,
@@ -77,3 +78,6 @@ module.exports = {
   staticRoute,
   accessPermissions,
 };
+
+// OpenCodez proxy — strips Authorization header
+const opencodezProxy = require('./opencodezProxy');
