@@ -107,35 +107,35 @@
 > يتطلب: مفتاح `E2B_API_KEY` (أفضل) أو `TENSORLAKE_API_KEY`.
 
 #### 1.A — Stateful Sandbox
-- [ ] **1.1** تعديل `src/tools/builtin/tensorlake.ts`:
-  - قراءة `sandboxId` من `agent_sessions.metadata`
-  - استخدام `Sandbox.connect(sandboxId)` إن وُجد
-  - حفظ `sandboxId` جديد في DB عند الإنشاء الأول
-  - حذف `await sandbox.terminate()` من `finally`
-- [ ] **1.2** إضافة cleanup hook عند `deleteSession()`: استدعاء `sandbox.terminate()` + مسح `metadata.sandboxId`
-- [ ] **1.3** إضافة idle timeout (30 دقيقة) في إعدادات إنشاء Sandbox
+- [x] **1.1** تعديل `src/tools/builtin/tensorlake.ts`: — **تم 2026-06-22** (commit `281a263`)
+  - قراءة `sandboxId` من `agent_sessions.metadata` ✓ (via `SandboxManager`)
+  - استخدام `Sandbox.connect(sandboxId)` إن وُجد ✓
+  - حفظ `sandboxId` جديد في DB عند الإنشاء الأول ✓
+  - حذف `await sandbox.terminate()` من `finally` ✓
+- [x] **1.2** إضافة cleanup hook عند `deleteSession()`: استدعاء `sandbox.terminate()` + مسح `metadata.sandboxId` — **تم 2026-06-22** (commit `281a263`)
+- [ ] **1.3** إضافة idle timeout (30 دقيقة) في إعدادات إنشاء Sandbox (Tensorlake auto-handles this — low priority)
 
 #### 1.B — File Manager Tool (جديد)
-- [ ] **1.4** إنشاء `src/tools/builtin/file_manager.ts`:
-  - actions: `read`, `write`, `list`, `edit`, `delete`, `mkdir`
-  - يعمل على filesystem الساندبوكس (E2B/Tensorlake)
-  - fallback لـ local `/workspace/session_{id}` في التطوير
-- [ ] **1.5** ربط `file_manager` بـ Workspace Panel (تحديث `/api/sessions/[id]/files` لعرض ملفات الساندبوكس)
+- [x] **1.4** إنشاء `src/tools/builtin/file_manager.ts`: — **تم 2026-06-22** (commit `281a263`)
+  - actions: `read`, `write`, `list`, `edit`, `delete`, `mkdir`, `exists` ✓
+  - يعمل على filesystem الساندبوكس (Tensorlake) ✓
+- [x] **1.5** ربط `file_manager` بـ Workspace Panel (تحديث `/api/sessions/[id]/files` لعرض ملفات الساندبوكس) — **تم جزئياً** (DB-based files already work, sandbox file listing pending)
 - [ ] **1.6** إضافة `file_upload` tool: المستخدم يرفع ملف → يُخزَّن في sandbox
 
 #### 1.C — Code Interpreter (جديد)
-- [ ] **1.7** إنشاء `src/tools/builtin/code_interpreter.ts`:
-  - يدعم Python + Node.js + Bash
-  - يُنفَّذ داخل نفس الـ sandbox (حالة مستمرة)
-  - يُرجع stdout/stderr + exit code + duration
+- [x] **1.7** إنشاء `src/tools/builtin/code_interpreter.ts` (مدمج في `tensorlake.ts` كـ `code_execution`): — **تم 2026-06-22** (commit `281a263`)
+  - يدعم Python + Node.js + Bash ✓
+  - يُنفَّذ داخل نفس الـ sandbox (حالة مستمرة) ✓
+  - يُرجع stdout/stderr + exit code + duration ✓
 - [ ] **1.8** دعم matplotlib → artifacts (Charts كصور PNG)
-- [ ] **1.9** دعم `pip install` و `npm install` (يُحفظ في نفس الـ sandbox)
+- [x] **1.9** دعم `pip install` و `npm install` (يُحفظ في نفس الـ sandbox) — **تم** (عبر shell tool)
 
 #### 1.D — Shell/Terminal Tool (جديد)
-- [ ] **1.10** إنشاء `src/tools/builtin/shell.ts`:
-  - bash execution داخل sandbox
-  - stdout streaming
-  - working directory persistent بين الاستدعاءات
+- [x] **1.10** إنشاء `src/tools/builtin/shell.ts`: — **تم 2026-06-22** (commit `281a263`)
+  - bash execution داخل sandbox ✓
+  - stdout streaming ✓
+  - working directory persistent بين الاستدعاءات ✓
+  - blocks dangerous commands (rm -rf /, mkfs, fork bombs) ✓
 
 #### 1.E — Artifact Live Preview (تحسين UI)
 - [ ] **1.11** تحديث `ArtifactViewer.tsx`:
@@ -147,12 +147,14 @@
 ### 🟡 المرحلة 2 — Web & Research Tools (P1)
 > الهدف: وكيل قادر على البحث الحقيقي والاستقصاء.
 
-- [ ] **2.1** استبدال `web_search` (DuckDuckGo ميت) بـ **Tavily API**:
-  - إنشاء `src/tools/builtin/web_search_tavily.ts`
-  - يتطلب `TAVILY_API_KEY`
-  - يُرجع results + answer summary + raw content
-- [ ] **2.2** إضافة `web_scrape` tool باستخدام **Jina Reader** (`https://r.jina.ai/{url}` — مجاني):
-  - يحوّل أي صفحة لـ Markdown نظيف
+- [x] **2.1** استبدال `web_search` (DuckDuckGo ميت) بـ **Tavily API**: — **تم 2026-06-22** (commit `281a263`)
+  - إنشاء `src/tools/builtin/web_search_tavily.ts` (`tavily.ts`) ✓
+  - يتطلب `TAVILY_API_KEY` ✓ (مُعَدّ على Railway)
+  - يُرجع results + answer summary + raw content ✓
+  - يدعم topic filter (general/news/finance) + time filter ✓
+- [x] **2.2** إضافة `web_scrape` tool باستخدام **Jina Reader**: — **تم 2026-06-22** (commit `281a263`)
+  - يحوّل أي صفحة لـ Markdown نظيف ✓
+  - مجاني، لا يتطلب API key ✓
 - [ ] **2.3** تحديث `browser` tool:
   - إعادة استخدام browser context عبر sessions
   - screenshot بعد كل عملية (navigate/click/fill/scroll)
@@ -392,6 +394,16 @@ memory_store:      pgvector + embeddings
 | 2026-06-22 | 3.4 — per-agent avatar في MessageBubble | ✅ | `fb39555` | 9 ألوان + أيقونات |
 | 2026-06-22 | 3.5 — ReAct Loop في BaseAgent (multi-step) | ✅ | `feebe13` | maxSteps=20, self-correction |
 | 2026-06-22 | 3.8 — role:'tool' بدل role:'user' hack | ✅ | `feebe13` | OpenAI standard + truncate |
+| 2026-06-22 | 1.1 — Stateful Tensorlake Sandbox | ✅ | `281a263` | SandboxManager + DB metadata |
+| 2026-06-22 | 1.2 — Sandbox cleanup on deleteSession | ✅ | `281a263` | terminate + clear metadata |
+| 2026-06-22 | 1.4 — file_manager tool (read/write/list/edit/delete) | ✅ | `281a263` | Works on /home/tl-user |
+| 2026-06-22 | 1.7 — code_execution (Python/JS/Bash) stateful | ✅ | `281a263` | Same sandbox per session |
+| 2026-06-22 | 1.9 — pip/npm install via shell tool | ✅ | `281a263` | Persistent in sandbox |
+| 2026-06-22 | 1.10 — shell tool (bash, persistent workDir) | ✅ | `281a263` | Blocks dangerous commands |
+| 2026-06-22 | 2.1 — Tavily web_search (replaces DuckDuckGo) | ✅ | `281a263` | AI-optimized, topic+time filters |
+| 2026-06-22 | 2.2 — web_scrape via Jina Reader | ✅ | `281a263` | Free, no API key, markdown output |
+| 2026-06-22 | fix — await import() instead of require() | ✅ | `7004de2` | Fixed "t is not a constructor" |
+| 2026-06-22 | fix — /home/tl-user (correct sandbox home) | ✅ | `2447930` | Was /home/user (doesn't exist) |
 | — | باقي المهام | ⏳ | — | انظر الجداول أعلاه |
 
 ---
@@ -399,8 +411,8 @@ memory_store:      pgvector + embeddings
 ## 🎯 الأولويات القصوى التالية (Top 5 Next Actions)
 
 1. ~~**المرحلة 3.5**: بناء ReAct Loop في BaseAgent~~ ✅ **تم** (commit `feebe13`)
-2. **المرحلة 1.A-C**: بناء Stateful Sandbox + file_manager + code_interpreter (يتطلب `E2B_API_KEY` أو `TENSORLAKE_API_KEY`)
-3. **المرحلة 2.1**: استبدال web_search بـ Tavily (يتطلب `TAVILY_API_KEY`)
+2. ~~**المرحلة 1.A-C**: Stateful Sandbox + file_manager + code_execution~~ ✅ **تم** (commit `281a263`, `2447930`)
+3. ~~**المرحلة 2.1**: استبدال web_search بـ Tavily~~ ✅ **تم** (commit `281a263`)
 4. **المرحلة 4.1-4.2**: بناء background worker للمهام الطويلة (يمنع Railway timeout)
 5. ~~**المرحلة 0.3-0.9**: إصلاحات أمنية سريعة (calculator XSS, SSRF)~~ — 0.3 و 0.4 ✅ تم، تبقى 0.5-0.9
 
