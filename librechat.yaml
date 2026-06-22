@@ -1,6 +1,9 @@
 # ============================================================================
 # LibreChat Configuration — Agent Platform
 # ============================================================================
+# OpenCodez doesn't require any API key — sending one causes 401 errors.
+# We set apiKey to empty string to prevent sending Authorization header.
+# ============================================================================
 
 version: 1.3.13
 
@@ -26,11 +29,8 @@ fileStrategy: local
 
 endpoints:
   custom:
-    # ── OpenCodez Provider (OpenAI-compatible) ──────────────────────────
-    # OpenCodez works WITHOUT an API key — sending any key causes 401.
-    # Setting apiKey to empty string prevents the Authorization header.
     - name: 'OpenCodez'
-      apiKey: ''
+      apiKey: 'no-key-required'
       baseURL: 'https://opencode.ai/zen/v1'
       models:
         default:
@@ -48,5 +48,13 @@ endpoints:
       summaryModel: 'deepseek-v4-flash-free'
       forcePrompt: false
       modelDisplayLabel: 'OpenCodez'
+      # Override Authorization header with empty value
+      # OpenCodez rejects any Bearer token
+      headers:
+        Authorization: ''
+        Content-Type: 'application/json'
       addParams:
         stream: true
+      dropParams:
+        - 'temperature'
+        - 'top_p'
