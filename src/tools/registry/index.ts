@@ -318,8 +318,9 @@ class ToolRegistryImpl {
       try {
         // Multi-row INSERT using parameterized values
         // Columns: user_id, action, resource_type, resource_id, before, after, created_at
+        // We use NOW() for created_at (server-side timestamp) to avoid sending 7th param per row.
         const valuesClause = entries.map((_, i) =>
-          `($${i * 6 + 1}, $${i * 6 + 2}, $${i * 6 + 3}, $${i * 6 + 4}, $${i * 6 + 5}::jsonb, $${i * 6 + 6}::jsonb)`
+          `($${i * 6 + 1}, $${i * 6 + 2}, $${i * 6 + 3}, $${i * 6 + 4}, $${i * 6 + 5}::jsonb, $${i * 6 + 6}::jsonb, NOW())`
         ).join(', ');
         const params: any[] = [];
         for (const e of entries) {
