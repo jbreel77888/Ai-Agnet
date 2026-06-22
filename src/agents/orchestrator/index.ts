@@ -351,7 +351,6 @@ class AgentOrchestratorImpl {
     if (!session) throw new Error('Session not found');
 
     // Terminate any Tensorlake sandbox associated with this session
-    // (files + processes are destroyed; sandboxId cleared from metadata)
     try {
       const { getSandboxManager } = await import('../../sandbox/manager');
       const sandboxManager = getSandboxManager();
@@ -361,6 +360,14 @@ class AgentOrchestratorImpl {
       }
     } catch (err: any) {
       console.warn(`[orchestrator] Sandbox cleanup failed for session ${sessionId}:`, err.message);
+    }
+
+    // Close any browser session associated with this session
+    try {
+      const { closeSessionBrowser } = await import('../../tools/builtin/browser');
+      await closeSessionBrowser(sessionId);
+    } catch (err: any) {
+      console.warn(`[orchestrator] Browser cleanup failed for session ${sessionId}:`, err.message);
     }
 
     await db.delete(agentSessions).where(eq(agentSessions.id, sessionId));

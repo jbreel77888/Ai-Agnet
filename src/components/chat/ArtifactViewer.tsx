@@ -26,7 +26,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
-export type ArtifactType = 'code' | 'text' | 'json' | 'image';
+export type ArtifactType = 'code' | 'text' | 'json' | 'image' | 'html' | 'csv' | 'svg';
 
 export interface ArtifactItem {
   id: string;
@@ -54,6 +54,19 @@ function detectLanguage(name: string, hint?: string): string {
     c: 'c', cpp: 'cpp', cs: 'csharp', swift: 'swift',
   };
   return (ext && map[ext]) || 'text';
+}
+
+function detectType(name: string, content: string, declaredType?: ArtifactType): ArtifactType {
+  if (declaredType && declaredType !== 'text') return declaredType;
+  const ext = name.split('.').pop()?.toLowerCase();
+  if (ext === 'html' || ext === 'htm') return 'html';
+  if (ext === 'csv' || ext === 'tsv') return 'csv';
+  if (ext === 'svg') return 'svg';
+  if (ext === 'json') return 'json';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'].includes(ext || '')) return 'image';
+  if (content?.trimStart().startsWith('<!DOCTYPE html') || content?.trimStart().startsWith('<html')) return 'html';
+  if (content?.trimStart().startsWith('<?xml') && content?.includes('<svg')) return 'svg';
+  return 'text';
 }
 
 function formatSize(bytes?: number): string {
@@ -129,7 +142,10 @@ function triggerDownload(url: string, filename: string) {
 }
 
 function ArtifactContent({ artifact }: { artifact: ArtifactItem }) {
-  if (artifact.type === 'image') {
+  // Auto-detect type if not explicitly set
+  const effectiveType = detectType(artifact.name, artifact.content, artifact.type);
+
+  if (effectiveType === 'image') {
     return (
       <div className="flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-900/40 min-h-[200px]">
         <img
@@ -141,7 +157,43 @@ function ArtifactContent({ artifact }: { artifact: ArtifactItem }) {
     );
   }
 
-  if (artifact.type === 'json') {
+  // SVG — render inline (vector graphics)
+  if (effectiveType === 'svg') {
+    return (
+      <div className="flex items-center justify-center p-4 bg-white dark:bg-slate-900/40 min-h-[200px]">
+        <div
+          className="max-w-full max-h-[60vh]"
+          dangerouslySetInnerHTML={{ __html: artifact.content }}
+        />
+      </div>
+    );
+  }
+
+  // HTML — render in sandboxed iframe (live preview)
+  if (effectiveType === 'html') {
+    const blob = new Blob([artifact.content], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    return (
+      <div className="bg-white" style={{ height: '400px' }}>
+        <iframe
+          src={url}
+          title={artifact.name}
+          className="w-full h-full border-0"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          onLoad={() => {
+            // Revoke after load to free memory (keep reference for re-renders)
+          }}
+        />
+      </div>
+    );
+  }
+
+  // CSV — render as interactive table
+  if (effectiveType === 'csv') {
+    return <CsvTable content={artifact.content} />;
+  }
+
+  if (effectiveType === 'json') {
     let pretty = artifact.content;
     try {
       pretty = JSON.stringify(JSON.parse(artifact.content), null, 2);
@@ -155,7 +207,7 @@ function ArtifactContent({ artifact }: { artifact: ArtifactItem }) {
     );
   }
 
-  if (artifact.type === 'code') {
+  if (effectiveType === 'code') {
     const lang = detectLanguage(artifact.name, artifact.language);
     return (
       <SyntaxHighlighter
@@ -181,6 +233,67 @@ function ArtifactContent({ artifact }: { artifact: ArtifactItem }) {
     <pre className="m-0 p-3 text-[12.5px] font-mono text-slate-700 dark:text-slate-300 overflow-auto max-h-[60vh] whitespace-pre-wrap break-words">
       {artifact.content}
     </pre>
+  );
+}
+
+/**
+ * CSV Table — renders CSV/TSV content as an interactive HTML table.
+ */
+function CsvTable({ content }: { content: string }) {
+  const rows = content.trim().split(/\r?\n/).map(row => {
+    // Simple CSV parser (handles quoted fields with commas)
+    const cells: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i];
+      if (ch === '"') {
+        if (inQuotes && row[i + 1] === '"') { current += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        cells.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    cells.push(current);
+    return cells;
+  });
+
+  if (rows.length === 0) return <div className="p-3 text-[12px] text-muted-foreground">Empty CSV</div>;
+
+  const headers = rows[0];
+  const dataRows = rows.slice(1);
+
+  return (
+    <div className="overflow-auto max-h-[60vh] bg-white">
+      <table className="min-w-full text-[12px] border-collapse">
+        <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800">
+          <tr>
+            {headers.map((h, i) => (
+              <th key={i} className="px-3 py-1.5 text-left font-semibold border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dataRows.map((row, i) => (
+            <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+              {headers.map((_, j) => (
+                <td key={j} className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 whitespace-nowrap">
+                  {row[j] ?? ''}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="px-3 py-1 text-[10px] text-muted-foreground bg-slate-50 dark:bg-slate-900/40 border-t">
+        {dataRows.length} rows × {headers.length} columns
+      </div>
+    </div>
   );
 }
 

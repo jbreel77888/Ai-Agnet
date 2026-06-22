@@ -133,6 +133,71 @@ export class TensorlakeSandboxTool implements ITool {
       const exitCode = (result as any).exitCode ?? 0;
       const success = exitCode === 0;
 
+      // ── Detect generated artifacts (charts, files, etc.) ──────────────
+      // After code execution, check the working directory for any NEW image
+      // or data files that the code may have created (e.g., matplotlib
+      // savefig('chart.png')). These are returned as base64-encoded
+      // artifacts so the UI can preview them.
+      const artifacts: Array<{ name: string; type: string; mimeType: string; base64: string; size: number }> = [];
+      const ARTIFACT_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'csv', 'html', 'json', 'txt'];
+      try {
+        const dirListing = await sandbox.listDirectory(workDir);
+        const entries = (dirListing as any).entries || (dirListing as any).files || dirListing;
+        if (Array.isArray(entries)) {
+          for (const entry of entries) {
+            const filename = entry.name || entry.filename || '';
+            if (!filename || filename.startsWith('_exec_') || filename === 'hello.txt' || filename === 'data.txt') continue;
+            const ext = filename.split('.').pop()?.toLowerCase();
+            if (!ext || !ARTIFACT_EXTENSIONS.includes(ext)) continue;
+            // Skip files > 2MB (too large for base64 in tool result)
+            const size = entry.size || 0;
+            if (size > 2 * 1024 * 1024) continue;
+
+            try {
+              const fileData = await sandbox.readFile(`${workDir}/${filename}`);
+              const buffer = Buffer.isBuffer(fileData) ? fileData : Buffer.from(fileData);
+              const mimeType = ext === 'png' ? 'image/png'
+                : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+                : ext === 'gif' ? 'image/gif'
+                : ext === 'webp' ? 'image/webp'
+                : ext === 'svg' ? 'image/svg+xml'
+                : ext === 'csv' ? 'text/csv'
+                : ext === 'html' ? 'text/html'
+                : ext === 'json' ? 'application/json'
+                : 'text/plain';
+              const type = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext) ? 'image'
+                : ext === 'csv' ? 'csv'
+                : ext === 'html' ? 'html'
+                : ext === 'json' ? 'json'
+                : 'text';
+
+              // For text-based files, return as text; for images, return as data URL
+              if (type === 'image') {
+                artifacts.push({
+                  name: filename,
+                  type,
+                  mimeType,
+                  base64: `data:${mimeType};base64,${buffer.toString('base64')}`,
+                  size: buffer.length,
+                });
+              } else {
+                artifacts.push({
+                  name: filename,
+                  type,
+                  mimeType,
+                  base64: buffer.toString('utf-8'),
+                  size: buffer.length,
+                });
+              }
+            } catch (readErr: any) {
+              console.warn(`[tensorlake] Failed to read artifact ${filename}:`, readErr.message);
+            }
+          }
+        }
+      } catch (listErr: any) {
+        // Directory listing failed — not critical, just skip artifacts
+      }
+
       // Truncate very large outputs
       const maxLen = 8000;
       const truncStdout = stdout.length > maxLen
@@ -151,6 +216,13 @@ export class TensorlakeSandboxTool implements ITool {
           sandboxId,
           language: args.language,
           durationMs: (result as any).durationMs,
+          artifacts: artifacts.length > 0 ? artifacts.map(a => ({
+            name: a.name,
+            type: a.type,
+            mimeType: a.mimeType,
+            content: a.base64,
+            size: a.size,
+          })) : undefined,
         },
         error: success ? undefined : {
           code: 'EXEC_ERROR',
