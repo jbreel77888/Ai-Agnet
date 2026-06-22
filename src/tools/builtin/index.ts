@@ -145,41 +145,190 @@ export class HttpRequestTool implements ITool {
 
 export class MemorySearchTool implements ITool {
   readonly name = 'memory_search';
-  readonly description = 'Search long-term memory for relevant facts and context.';
+  readonly description = 'Search long-term memory using SEMANTIC similarity (vector embeddings). Finds facts that are conceptually related to the query, not just keyword matches. Returns ranked results with similarity scores.';
   readonly category = 'builtin';
   readonly schema = {
     type: 'object',
-    properties: { query: { type: 'string' }, topK: { type: 'integer', default: 5 } },
+    properties: {
+      query: { type: 'string', description: 'What to search for in memory' },
+      topK: { type: 'integer', minimum: 1, maximum: 20, default: 5 },
+      minScore: { type: 'number', minimum: 0, maximum: 1, default: 0.3 },
+    },
     required: ['query'], additionalProperties: false,
   };
-  validate(args: any) { return args?.query ? { valid: true } : { valid: false, errors: ['query required'] }; }
-  async execute(args: { query: string; topK?: number }, ctx: ToolContext): Promise<ToolResult> {
+  validate(args: any) {
+    if (!args?.query) return { valid: false, errors: ['query required'] };
+    if (typeof args.query !== 'string') return { valid: false, errors: ['query must be a string'] };
+    if (args.query.length > 2000) return { valid: false, errors: ['query too long (max 2000 chars)'] };
+    return { valid: true };
+  }
+  async execute(args: { query: string; topK?: number; minScore?: number }, ctx: ToolContext): Promise<ToolResult> {
     try {
-      const { createLongTermMemory } = await import('../../memory/long-term');
-      const memory = createLongTermMemory();
-      const results = await memory.search({ text: args.query, userId: ctx.userId, topK: args.topK || 5, minScore: 0.3 });
-      return { success: true, data: { results: results.map(r => ({ fact: r.record.fact, score: r.score })), count: results.length } };
-    } catch (err: any) { return { success: false, error: { code: 'MEMORY_ERROR', message: err.message } }; }
+      const topK = args.topK || 5;
+      const minScore = args.minScore ?? 0.3;
+
+      // Generate embedding for the query
+      const { embedText, embeddingToPgVector } = await import('../../embeddings');
+      const queryEmbedding = await embedText(args.query);
+
+      const { Pool } = require('pg');
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
+      try {
+        let results: any[];
+
+        if (queryEmbedding) {
+          // Use pgvector cosine similarity search (fast, indexed)
+          const vecStr = embeddingToPgVector(queryEmbedding);
+          const res = await pool.query(
+            `SELECT id, fact, fact_type, importance,
+                    1 - (embedding_vec <=> $1::vector) AS score,
+                    last_accessed_at, created_at
+             FROM memory_long
+             WHERE embedding_vec IS NOT NULL
+               ${ctx.userId ? 'AND user_id = $2' : ''}
+             ORDER BY embedding_vec <=> $1::vector
+             LIMIT $${ctx.userId ? '3' : '2'}`,
+            ctx.userId ? [vecStr, ctx.userId, topK] : [vecStr, topK]
+          );
+          results = res.rows.filter((r: any) => parseFloat(r.score) >= minScore);
+
+          // Update access count for retrieved memories
+          for (const r of results) {
+            await pool.query(
+              `UPDATE memory_long SET access_count = access_count + 1, last_accessed_at = NOW() WHERE id = $1`,
+              [r.id]
+            ).catch(() => {}); // non-critical
+          }
+        } else {
+          // Fallback: text-based search (no embeddings available)
+          const res = await pool.query(
+            `SELECT id, fact, fact_type, importance,
+                    CASE WHEN fact ILIKE '%' || $1 || '%' THEN 0.5 ELSE 0.1 END AS score,
+                    last_accessed_at, created_at
+             FROM memory_long
+             WHERE ${ctx.userId ? 'user_id = $2 AND ' : ''}fact ILIKE '%' || $1 || '%'
+             ORDER BY created_at DESC
+             LIMIT $${ctx.userId ? '3' : '2'}`,
+            ctx.userId ? [args.query, ctx.userId, topK] : [args.query, topK]
+          );
+          results = res.rows;
+        }
+
+        return {
+          success: true,
+          data: {
+            results: results.map((r: any) => ({
+              fact: r.fact,
+              type: r.fact_type,
+              importance: parseFloat(r.importance),
+              score: parseFloat(r.score),
+            })),
+            count: results.length,
+            query: args.query,
+            searchMode: queryEmbedding ? 'semantic' : 'keyword',
+          },
+        };
+      } finally {
+        await pool.end();
+      }
+    } catch (err: any) {
+      return { success: false, error: { code: 'MEMORY_ERROR', message: err.message } };
+    }
   }
 }
 
 export class MemoryStoreTool implements ITool {
   readonly name = 'memory_store';
-  readonly description = 'Store a fact in long-term memory for future reference.';
+  readonly description = 'Store a fact in long-term memory for future reference. The fact is embedded using OpenAI text-embedding-3-small for semantic search. Use this to remember user preferences, important entities, or key information.';
   readonly category = 'builtin';
   readonly schema = {
     type: 'object',
     properties: { fact: { type: 'string' }, type: { type: 'string', enum: ['preference', 'entity', 'event', 'summary', 'custom'], default: 'custom' }, importance: { type: 'number', default: 0.5 } },
     required: ['fact'], additionalProperties: false,
   };
-  validate(args: any) { return args?.fact ? { valid: true } : { valid: false, errors: ['fact required'] }; }
+  validate(args: any) {
+    if (!args?.fact) return { valid: false, errors: ['fact required'] };
+    if (typeof args.fact !== 'string') return { valid: false, errors: ['fact must be a string'] };
+    if (args.fact.length > 5000) return { valid: false, errors: ['fact too long (max 5000 chars)'] };
+    return { valid: true };
+  }
   async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
     try {
-      const { createLongTermMemory } = await import('../../memory/long-term');
-      const memory = createLongTermMemory();
-      const record = await memory.storeFact(args.fact, args.type || 'custom', { userId: ctx.userId, sessionId: ctx.sessionId, importance: args.importance ?? 0.5 });
-      return { success: true, data: { id: record.id, fact: record.fact } };
-    } catch (err: any) { return { success: false, error: { code: 'MEMORY_ERROR', message: err.message } }; }
+      // Generate embedding for the fact
+      let embedding: number[] | null = null;
+      try {
+        const { embedText } = await import('../../embeddings');
+        embedding = await embedText(args.fact);
+      } catch (err: any) {
+        console.warn('[memory_store] Embedding generation failed:', err.message);
+      }
+
+      // Store with embedding (both JSONB + vector column)
+      const { Pool } = require('pg');
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 5000 });
+      try {
+        const { embeddingToPgVector } = await import('../../embeddings');
+        const embeddingVecStr = embedding ? embeddingToPgVector(embedding) : null;
+        const result = await pool.query(
+          `INSERT INTO memory_long (user_id, agent_id, session_id, fact, fact_type, importance, embedding, embedding_model, embedding_vec)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8::vector)
+           RETURNING id, fact`,
+          [
+            ctx.userId || null,
+            ctx.agentId || null,
+            ctx.sessionId || null,
+            args.fact,
+            args.type || 'custom',
+            (args.importance ?? 0.5).toString(),
+            embedding ? JSON.stringify(embedding) : null,
+            embeddingVecStr,
+          ]
+        );
+        // Note: the $8::vector cast will fail if embeddingVecStr is null, so handle separately
+        if (result.rows.length === 0 && embedding) {
+          // Fallback: insert without vector cast
+          await pool.query(
+            `INSERT INTO memory_long (user_id, agent_id, session_id, fact, fact_type, importance, embedding, embedding_model)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING id, fact`,
+            [
+              ctx.userId || null,
+              ctx.agentId || null,
+              ctx.sessionId || null,
+              args.fact,
+              args.type || 'custom',
+              (args.importance ?? 0.5).toString(),
+              JSON.stringify(embedding),
+              'text-embedding-3-small',
+            ]
+          );
+        }
+        // Update embedding_vec separately if we have it
+        if (embedding) {
+          const record = result.rows[0];
+          if (record) {
+            await pool.query(
+              `UPDATE memory_long SET embedding_vec = $1::vector, embedding_model = 'text-embedding-3-small' WHERE id = $2`,
+              [embeddingVecStr, record.id]
+            );
+          }
+        }
+        const record = result.rows[0] || { fact: args.fact };
+        return {
+          success: true,
+          data: {
+            id: record.id,
+            fact: record.fact,
+            embedded: !!embedding,
+            embeddingModel: embedding ? 'text-embedding-3-small' : null,
+          },
+        };
+      } finally {
+        await pool.end();
+      }
+    } catch (err: any) {
+      return { success: false, error: { code: 'MEMORY_ERROR', message: err.message } };
+    }
   }
 }
 
@@ -242,6 +391,20 @@ export async function registerBuiltinTools(): Promise<void> {
     console.log('[tools] Registered web_scrape (Jina Reader)');
   } catch (err: any) {
     console.warn('[tools] web_scrape registration failed:', err.message);
+  }
+
+  // ── RAG tools (ingest + query) — requires OPENAI_API_KEY for embeddings ──
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const ragModule = await import('./rag');
+      registry.register(new ragModule.RagIngestTool());
+      registry.register(new ragModule.RagQueryTool());
+      console.log('[tools] Registered rag_ingest + rag_query (semantic search)');
+    } catch (err: any) {
+      console.warn('[tools] RAG tools registration failed:', err.message);
+    }
+  } else {
+    console.log('[tools] RAG tools skipped (no OPENAI_API_KEY for embeddings)');
   }
 
   // ── Stateful sandbox tools (Tensorlake) ───────────────────────────────

@@ -254,10 +254,12 @@ function detectTools(message: string): string[] {
   if (/\b(search|google|find online|web|بحث|ابحث)\b/i.test(message)) tools.push('web_search');
   if (/\b(scrape|read page|read url|extract content|اقرأ|استخرج)\b/i.test(message)) tools.push('web_scrape');
   if (/\b(browser|click|visit website|scrape)\b/i.test(message)) tools.push('browser');
-  if (/\b(remember|recall|memory|save this|note this)\b/i.test(message)) tools.push('memory_store', 'memory_search');
+  if (/\b(remember|recall|memory|save this|note this|تذكر|استرجع|احفظ)\b/i.test(message)) tools.push('memory_store', 'memory_search');
   if (/\b(run code|execute code|python|javascript|typescript|repl|كود|تنفيذ كود)\b/i.test(message)) tools.push('code_execution');
   if (/\b(file|read file|write file|edit file|delete file|ملف|اكتب ملف|اقرأ ملف)\b/i.test(message)) tools.push('file_manager');
   if (/\b(shell|bash|terminal|command line|pip install|npm install|طرفية|اوامر)\b/i.test(message)) tools.push('shell');
+  if (/\b(ingest|upload document|knowledge base|rag|documents?|قاعدة معرفة|مستندات?)\b/i.test(message)) tools.push('rag_ingest');
+  if (/\b(query|search documents?|find in documents?|semantic search|استعلم|ابحث في المستندات)\b/i.test(message)) tools.push('rag_query');
   return tools;
 }
 
