@@ -3,11 +3,14 @@
  *
  * Body: { content: string, modelId?: string }
  * Returns: SSE stream of AgentEvent chunks
+ *
+ * Rate limited: 30 messages per minute per user.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAgentOrchestrator } from '../../../../../agents/orchestrator';
 import { createJWTService } from '../../../../../auth/jwt';
+import { checkChatRateLimit } from '../../../../../lib/rate-limit';
 
 async function getUser(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -19,13 +22,30 @@ async function getUser(req: NextRequest) {
 }
 
 const sendSchema = z.object({
-  content: z.string().min(1),
+  content: z.string().min(1).max(10000, 'Message too long (max 10000 chars)'),
   modelId: z.string().uuid().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getUser(req);
   if (!user) return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED' } }, { status: 401 });
+
+  // ── Rate limit: 30 messages per minute per user ───────────────────────
+  const rl = checkChatRateLimit(user.sub);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { success: false, error: { code: 'RATE_LIMITED', message: `Too many messages. Try again in ${rl.retryAfterSec}s.` } },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rl.retryAfterSec),
+          'X-RateLimit-Limit': '30',
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(Math.ceil(rl.resetAtMs / 1000)),
+        },
+      }
+    );
+  }
 
   const { id: sessionId } = await params;
 
