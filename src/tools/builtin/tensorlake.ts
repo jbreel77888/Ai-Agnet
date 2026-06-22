@@ -86,8 +86,8 @@ export class TensorlakeSandboxTool implements ITool {
     const { sandbox, sandboxId } = handle;
 
     try {
-      // Determine language + write code to a file in /home/user (sandbox home)
-      const workDir = '/home/user';
+      // Determine language + write code to a file in /home/tl-user (sandbox home)
+      const workDir = '/home/tl-user';
       let filePath: string;
       let command: string;
       let cmdArgs: string[];

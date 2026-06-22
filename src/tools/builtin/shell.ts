@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Like code_execution with language=bash, but with a more shell-friendly
  * interface: command string + optional stdin + working directory.
- * Working directory persists across calls (cd'd into /home/user by default
+ * Working directory persists across calls (cd'd into /home/tl-user by default
  * but can be changed via the workingDir arg).
  *
  * Use cases:
@@ -17,7 +17,7 @@ import type { ITool } from '../registry';
 import type { ToolResult, ToolContext } from '../../types';
 import { getSandboxManager } from '../../sandbox/manager';
 
-const DEFAULT_WORK_DIR = '/home/user';
+const DEFAULT_WORK_DIR = '/home/tl-user';
 
 export class ShellTool implements ITool {
   readonly name = 'shell';
@@ -32,8 +32,8 @@ export class ShellTool implements ITool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (default: /home/user)',
-        default: '/home/user',
+        description: 'Working directory (default: /home/tl-user)',
+        default: '/home/tl-user',
       },
       timeout: {
         type: 'integer',
@@ -85,7 +85,7 @@ export class ShellTool implements ITool {
         envs: {
           PYTHONUNBUFFERED: '1',
           TERM: 'dumb',
-          HOME: '/home/user',
+          HOME: '/home/tl-user',
           PATH: '/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin',
         },
         timeoutMs: (args.timeout || 60) * 1000,

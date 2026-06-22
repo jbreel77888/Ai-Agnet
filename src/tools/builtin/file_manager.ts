@@ -14,13 +14,13 @@
  *   - mkdir     → create a directory
  *   - exists    → check if file/dir exists
  *
- * All paths are relative to /home/user (sandbox home) unless absolute.
+ * All paths are relative to /home/tl-user (sandbox home) unless absolute.
  */
 import type { ITool } from '../registry';
 import type { ToolResult, ToolContext } from '../../types';
 import { getSandboxManager } from '../../sandbox/manager';
 
-const WORK_DIR = '/home/user';
+const WORK_DIR = '/home/tl-user';
 
 function resolvePath(p: string): string {
   if (!p) return WORK_DIR;
@@ -42,7 +42,7 @@ export class FileManagerTool implements ITool {
       },
       path: {
         type: 'string',
-        description: 'File or directory path (relative to /home/user, or absolute)',
+        description: 'File or directory path (relative to /home/tl-user, or absolute)',
       },
       content: {
         type: 'string',
