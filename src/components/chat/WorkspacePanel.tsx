@@ -31,6 +31,7 @@ import {
   Upload, Trash2, Download, Eye, X, RefreshCw, Loader2, CheckCircle2,
   AlertCircle, Clock, Cpu, Server, Box, Wrench, Globe, Brain, Github,
   Slack, Mail, StickyNote, ChevronRight, Terminal, Activity, Zap,
+  Folder, Home, ArrowLeft, HardDrive,
   CircleDashed, CircleDot, type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -41,6 +42,7 @@ import {
   Tooltip, TooltipContent, TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { SandboxBrowser } from './SandboxBrowser';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types — workspace payload shape (matches API response)
@@ -930,7 +932,11 @@ export function WorkspacePanel({ sessionId, onClose }: WorkspacePanelProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-        <TabsList className="grid grid-cols-5 h-auto p-1 rounded-none border-b border-slate-200 dark:border-slate-800 bg-muted/20">
+        <TabsList className="grid grid-cols-6 h-auto p-1 rounded-none border-b border-slate-200 dark:border-slate-800 bg-muted/20">
+          <TabsTrigger value="sandbox" className="text-[10.5px] gap-1 h-7 py-1">
+            <HardDrive className="w-3 h-3" />
+            <span className="hidden xl:inline">Sandbox</span>
+          </TabsTrigger>
           <TabsTrigger value="files" className="text-[10.5px] gap-1 h-7 py-1">
             <FilesIcon className="w-3 h-3" />
             <span className="hidden xl:inline">Files</span>
@@ -964,6 +970,9 @@ export function WorkspacePanel({ sessionId, onClose }: WorkspacePanelProps) {
             </div>
           ) : (
             <>
+              <TabsContent value="sandbox" className="m-0 h-full">
+                <SandboxBrowser sessionId={sessionId} />
+              </TabsContent>
               <TabsContent value="files" className="m-0 h-full">
                 {data && <FilesTab sessionId={sessionId} files={data.files} onRefresh={load} />}
               </TabsContent>
