@@ -1,0 +1,78 @@
+# ============================================================================
+# LibreChat Configuration — Agent Platform
+# ============================================================================
+# Custom configuration using our OpenCodez provider (OpenAI-compatible)
+# and Tensorlake for sandbox code execution.
+# ============================================================================
+
+version: 1.3.13
+
+cache: true
+
+# Custom interface configuration
+interface:
+  customWelcome: 'مرحباً! أنا وكيلك الذكي. اختر مهمة أو اكتب طلبك.'
+  endpointsMenu: true
+  modelSelect: true
+  parameters: true
+  sidePanel: true
+  presets: true
+  prompts: true
+  bookmarks: true
+  multiConvo: true
+  obliterate: true
+
+# Registration — disable for now (single admin user)
+registration:
+  socialLogins: []
+  allowedDomains: []
+
+# File configuration
+fileStrategy: local
+
+# Endpoints configuration
+endpoints:
+  custom:
+    # ── OpenCodez Provider (OpenAI-compatible) ──────────────────────────
+    # Our primary LLM provider — free models via opencode.ai/zen/v1
+    - name: 'OpenCodez'
+      apiKey: 'opencode-free'
+      baseURL: 'https://opencode.ai/zen/v1'
+      models:
+        default:
+          - 'deepseek-v4-flash-free'
+          - 'mimo-v2.5-free'
+          - 'qwen3.6-plus-free'
+          - 'minimax-m3-free'
+          - 'nemotron-3-ultra-free'
+          - 'north-mini-code-free'
+        fetch: true
+      titleConvo: true
+      titleMethod: 'completion'
+      titleModel: 'deepseek-v4-flash-free'
+      summarize: false
+      summaryModel: 'deepseek-v4-flash-free'
+      forcePrompt: false
+      modelDisplayLabel: 'OpenCodez'
+      headers:
+        Content-Type: 'application/json'
+      addParams:
+        stream: true
+      dropParams:
+        - 'temperature'
+        - 'top_p'
+
+# Agent configuration — enable agents with tools
+agents:
+  recursionLimit: 50
+  capabilities:
+    - 'tools'
+    - 'file_search'
+    - 'code_interpreter'
+    - 'image_vision'
+
+# MCP settings — enable for future tool integrations
+mcpSettings:
+  allowedDomains:
+    - 'localhost'
+    - '*.example.com'

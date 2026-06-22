@@ -1,12 +1,13 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS",
-    "buildCommand": "bun install && bun run build",
-    "watchPatterns": ["src/**/*", "public/**/*", "package.json", "next.config.ts"]
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "./Dockerfile"
   },
   "deploy": {
-    "startCommand": "bun run start",
+    "startCommand": "node api/server/index.js",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
