@@ -1,0 +1,3 @@
+module.exports=[397998,e=>{"use strict";async function r(){console.log("[instrumentation] Runtime: nodejs");try{let r=await e.A(279498);r&&"function"==typeof r.registerNode&&await r.registerNode()}catch(e){console.error("[instrumentation] Error:",e)}}e.s(["register",()=>r])},279498,e=>{e.v(r=>Promise.all(["server/chunks/[root-of-the-server]__d8bb4498._.js","server/chunks/src_db_f55a9d42._.js","server/chunks/src_afcc7021._.js"].map(r=>e.l(r))).then(()=>r(296400)))}];
+
+//# sourceMappingURL=src_6a54b2ff._.js.map

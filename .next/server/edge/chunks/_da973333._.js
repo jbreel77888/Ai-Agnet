@@ -1,0 +1,3 @@
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["chunks/_da973333._.js",532714,e=>{"use strict";async function n(){console.log("[instrumentation] Runtime: edge"),console.log("[instrumentation] Skipping (not nodejs runtime)")}e.s(["register",()=>n])},385841,(e,n,t)=>{self._ENTRIES||={};let s=Promise.resolve().then(()=>e.i(532714));s.catch(()=>{}),self._ENTRIES.middleware_instrumentation=new Proxy(s,{get(e,n){if("then"===n)return(n,t)=>e.then(n,t);let t=(...t)=>e.then(e=>(0,e[n])(...t));return t.then=(t,s)=>e.then(e=>e[n]).then(t,s),t}})}]);
+
+//# sourceMappingURL=_da973333._.js.map

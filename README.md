@@ -1,217 +1,234 @@
-# Agent Platform — منصة الوكلاء السحابية
+<p align="center">
+  <a href="https://librechat.ai">
+    <img src="client/public/assets/logo.svg" height="256">
+  </a>
+  <h1 align="center">
+    <a href="https://librechat.ai">LibreChat</a>
+  </h1>
+</p>
 
-> منصة Agent سحابية احترافية مستوحاة من Manus — قابلة للتوسع، قابلة للصيانة، مناسبة للعمل الإنتاجي (Production Ready).
->
-> **مهم**: تم إعداد PostgreSQL + مفاتيح الأمان + Migrations تلقائياً في هذه البيئة — **لا حاجة لـ Railway أو أي إعداد يدوي**.
+<p align="center">
+  <strong>English</strong> ·
+  <a href="README.zh.md">中文</a>
+</p>
 
----
+<p align="center">
+  <a href="https://discord.librechat.ai"> 
+    <img
+      src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
+  </a>
+  <a href="https://www.youtube.com/@LibreChat"> 
+    <img
+      src="https://img.shields.io/badge/YOUTUBE-red.svg?style=for-the-badge&logo=youtube&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+  <a href="https://docs.librechat.ai"> 
+    <img
+      src="https://img.shields.io/badge/DOCS-blue.svg?style=for-the-badge&logo=read-the-docs&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+  <a aria-label="Sponsors" href="https://github.com/sponsors/danny-avila">
+    <img
+      src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+</p>
 
-## ✅ الحالة الراهنة — يعمل بالكامل
+<p align="center">
+<a href="https://railway.com/deploy/librechat-official?referralCode=HI9hWz&utm_medium=integration&utm_source=readme&utm_campaign=librechat">
+  <img src="https://railway.com/button.svg" alt="Deploy on Railway" height="30">
+</a>
+<a href="https://zeabur.com/templates/0X2ZY8">
+  <img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30"/>
+</a>
+<a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
+  <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
+</a>
+</p>
 
-| المكون | الحالة | تفاصيل |
-|--------|------|------|
-| **PostgreSQL 18.4** | ✅ يعمل | Embedded (port 5433)، 35 جدول تم إنشاؤها تلقائياً |
-| **Redis** | ⚠️ Memory Fallback | للإنتاج: أضف REDIS_URL |
-| **Encryption** | ✅ مُفعّل | AES-256-GCM، المفتاح مُولّد تلقائياً |
-| **JWT** | ✅ مُفعّل | Access + Refresh tokens، المفتاح مُولّد تلقائياً |
-| **Dev Server** | ✅ يعمل | http://localhost:3000 |
-| **API** | ✅ يعمل | /api/health، /api/system |
+<p align="center">
+  <a href="https://www.librechat.ai/docs/translation">
+    <img 
+      src="https://img.shields.io/badge/dynamic/json.svg?style=for-the-badge&color=2096F3&label=locize&query=%24.translatedPercentage&url=https://api.locize.app/badgedata/4cb2598b-ed4d-469c-9b04-2ed531a8cb45&suffix=%+translated" 
+      alt="Translation Progress">
+  </a>
+</p>
 
----
 
-## 🎯 ما تم إنجازه (المرحلة 1)
+# ✨ Features
 
-✅ **9 ملفات توثيق مرجعية** — ARCHITECTURE, DATABASE, AGENTS, PROVIDERS, TOOLS, MEMORY, WORKFLOWS, MCP, API
-✅ **هيكل المشروع الكامل** — 19 وحدة مستقلة (modular) تمنع Circular Dependencies
-✅ **Drizzle ORM Schema كامل** — 13 ملف schema لكل جداول PostgreSQL + pgvector
-✅ **Core Types & Interfaces** — TypeScript types مشتركة + interfaces لكل وحدة
-✅ **DI Container + EventBus** — فك ارتباط تام بين الوحدات
-✅ **Auth (JWT + RBAC)** — Access/Refresh tokens + Role-based access control
-✅ **Crypto utilities** — AES-256-GCM لتشفير API keys + JWT secret
-✅ **BullMQ Queues** — 12 queue معرّفة للنظام
-✅ **Redis client** — مع in-memory fallback للتجربة المحلية
-✅ **Lifecycle Manager** — Graceful shutdown + signal handling
-✅ **Circuit Breaker + Retry** — utilities للـ Resilience
-✅ **Cost Tracker** — حساب وتسجيل تكلفة كل LLM call
-✅ **لوحة تحكم أولية** — عرض المعمارية، الوحدات، الإجراءات اليدوية المطلوبة
-✅ **API endpoints** — `/api/health` و `/api/system`
+- 🖥️ **UI & Experience** inspired by ChatGPT with enhanced design and features
 
----
+- 🤖 **AI Model Selection**:  
+  - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Responses API (incl. Azure)
+  - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
+  - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
+    - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
+    - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
-## 🏗️ المعمارية
+- 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
+  - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran
+  - Seamless File Handling: Upload, process, and download files directly
+  - No Privacy Concerns: Fully isolated and secure execution
+  - Open-Source & Self-Hostable: powered by [ClickHouse/code-interpreter](https://github.com/ClickHouse/code-interpreter)
 
-**Clean Architecture + Modular Monolith**:
+- 🔦 **Agents & Tools Integration**:  
+  - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
+    - No-Code Custom Assistants: Build specialized, AI-driven helpers
+    - Agent Marketplace: Discover and deploy community-built agents
+    - Collaborative Sharing: Share agents with specific users and groups
+    - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more
+    - [Skills](https://www.librechat.ai/docs/features/skills): Create reusable `SKILL.md` instruction bundles for manual, automatic, or always-on agent workflows
+    - [Subagents](https://www.librechat.ai/docs/features/subagents): Delegate focused work to isolated child agent runs with their own context windows
+    - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API, and more
+    - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                    Presentation Layer                       │
-│  Next.js App Router · Admin UI · REST API · WebSocket      │
-└──────────────────────────┬─────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────┐
-│                   Application Layer                         │
-│  Use Cases · Orchestrators · Workflows · Agent Handoffs    │
-└──────────────────────────┬─────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────┐
-│                     Domain Layer                            │
-│  Entities · Value Objects · Domain Events · Pure Logic     │
-└──────────────────────────┬─────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────┐
-│                  Infrastructure Layer                       │
-│  PostgreSQL (Drizzle) · Redis (BullMQ) · S3 · External APIs │
-└────────────────────────────────────────────────────────────┘
-```
+- 🔍 **Web Search**:  
+  - Search the internet and retrieve relevant information to enhance your AI context
+  - Combines search providers, content scrapers, and result rerankers for optimal results
+  - **Customizable Jina Reranking**: Configure custom Jina API URLs for reranking services
+  - **[Learn More →](https://www.librechat.ai/docs/features/web_search)**
 
----
+- 🪄 **Generative UI with Code Artifacts**:  
+  - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) allow creation of React, HTML, and Mermaid diagrams directly in chat
 
-## 📚 حزمة التقنيات
+- 🎨 **Image Generation & Editing**
+  - Text-to-image and image-to-image with [GPT-Image-1](https://www.librechat.ai/docs/features/image_gen#1--openai-image-tools-recommended)
+  - Text-to-image with [DALL-E (3/2)](https://www.librechat.ai/docs/features/image_gen#2--dalle-legacy), [Stable Diffusion](https://www.librechat.ai/docs/features/image_gen#3--stable-diffusion-local), [Flux](https://www.librechat.ai/docs/features/image_gen#4--flux), or any [MCP server](https://www.librechat.ai/docs/features/image_gen#5--model-context-protocol-mcp)
+  - Produce stunning visuals from prompts or refine existing images with a single instruction
 
-| المكون | التقنية | السبب |
-|--------|---------|------|
-| Framework | Next.js 16 (App Router) | أحدث، SSR، API routes |
-| Language | TypeScript 5 | type safety |
-| Database | PostgreSQL 15+ | relational + JSON + pgvector |
-| ORM | Drizzle ORM | SQL-first، أداء، دعم pgvector |
-| Cache/Queue | Redis | سرعة + TTL |
-| Jobs | BullMQ | retries، schedules، priorities |
-| Vector | pgvector | DB واحدة، transactions |
-| Validation | Zod | type inference |
-| Logger | Pino | أسرع logger في Node.js |
-| Auth | JWT + RBAC | stateless، قابل للتوسع |
-| UI | shadcn/ui + Tailwind | modern، accessible |
-| Deploy | Railway | بساطة + auto-scale |
+- 💾 **Presets & Context Management**:  
+  - Create, Save, & Share Custom Presets  
+  - Switch between AI Endpoints and Presets mid-chat
+  - Edit, Resubmit, and Continue Messages with Conversation branching  
+  - Create and share prompts with specific users and groups
+  - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
 
----
+- 💬 **Multimodal & File Interactions**:  
+  - Upload and analyze images with Claude 3, GPT-4.5, GPT-4o, o1, Llama-Vision, and Gemini 📸  
+  - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
 
-## 📂 هيكل المشروع
+- 🌎 **Multilingual UI**:
+  - English, 中文 (简体), 中文 (繁體), العربية, Deutsch, Español, Français, Italiano
+  - Polski, Português (PT), Português (BR), Русский, 日本語, Svenska, 한국어, Tiếng Việt
+  - Türkçe, Nederlands, עברית, Català, Čeština, Dansk, Eesti, فارسی
+  - Suomi, Magyar, Հայերեն, Bahasa Indonesia, ქართული, Latviešu, ไทย, ئۇيغۇرچە
 
-```
-src/
-├── core/              # DI Container, EventBus, Lifecycle, Decorators
-├── providers/         # LLM Providers (OpenAI, Anthropic, Gemini, Groq, Ollama, ...)
-├── agents/            # 9 Agent Types + Handoffs + Sub-Agents
-├── tools/             # Dynamic Tools + Registry + Permissions
-├── memory/            # Short-term (Redis) + Long-term (pgvector)
-├── context/           # Context Engine: ضغط، تلخيص، استخراج
-├── workflows/         # DAG Engine: branches, conditions, parallel
-├── mcp/               # MCP Client (stdio, sse, websocket, http)
-├── background/        # BullMQ Queues + Workers
-├── rag/               # RAG: Ingestion, Chunking, Embeddings
-├── vector/            # pgvector Store + Index
-├── storage/           # Local + S3 + Manager
-├── integrations/      # GitHub, Slack, Notion, Discord, Email
-├── config/            # Env, Constants, Feature Flags
-├── auth/              # JWT, RBAC, Sessions
-├── observability/     # Logger, Tracing, Metrics, Cost
-├── api/               # Routes, Middleware, Validators
-├── db/                # Drizzle Schema + Client + Redis
-├── types/             # Shared TypeScript types
-├── utils/             # crypto, retry, circuit-breaker
-└── admin/             # Admin UI components
-```
+- 🧠 **Reasoning UI**:  
+  - Dynamic Reasoning UI for Chain-of-Thought/Reasoning AI models like DeepSeek-R1
 
----
+- 🎨 **Customizable Interface**:  
+  - Customizable Dropdown & Interface that adapts to both power users and newcomers
 
-## 🚀 الإعداد السريع
+- 🌊 **[Resumable Streams](https://www.librechat.ai/docs/features/resumable_streams)**:  
+  - Never lose a response: AI responses automatically reconnect and resume if your connection drops
+  - Multi-Tab & Multi-Device Sync: Open the same chat in multiple tabs or pick up on another device
+  - Production-Ready: Works from single-server setups to horizontally scaled deployments with Redis
 
-### 1. تثبيت الاعتماديات
-```bash
-bun install
-```
+- 🗣️ **Speech & Audio**:  
+  - Chat hands-free with Speech-to-Text and Text-to-Speech  
+  - Automatically send and play Audio  
+  - Supports OpenAI, Azure OpenAI, and Elevenlabs
 
-### 2. إعداد قاعدة البيانات
-```bash
-# على PostgreSQL (Railway, Docker, local):
-psql $DATABASE_URL -f scripts/setup-database.sql
-```
+- 📥 **Import & Export Conversations**:  
+  - Import Conversations from LibreChat, ChatGPT, Chatbot UI  
+  - Export conversations as screenshots, markdown, text, json
 
-### 3. إعداد متغيرات البيئة
-```bash
-cp .env.example .env
+- 🔍 **Search & Discovery**:  
+  - Search all messages/conversations
 
-# املأ القيم المطلوبة:
-# - DATABASE_URL (postgresql://...)
-# - REDIS_URL (redis://...)
-# - ENCRYPTION_KEY (openssl rand -base64 32)
-# - JWT_SECRET (openssl rand -hex 32)
-```
+- 👥 **Multi-User & Secure Access**:
+  - Multi-User, Secure Authentication with OAuth2, LDAP, & Email Login Support
+  - Built-in Moderation, and Token spend tools
 
-### 4. تشغيل migrations
-```bash
-bun run db:generate
-bun run db:migrate
-```
+- 🎛️ **[Admin Panel](https://www.librechat.ai/docs/features/admin_panel)**:
+  - Browser-based UI to manage users, groups, roles, and configuration overrides
+  - Edit settings and per-role/group permissions live, without redeploying
+  - Bundled with the Docker Compose stacks for one-command setup
 
-### 5. تشغيل التطوير
-```bash
-bun run dev
-```
+- ⚙️ **Configuration & Deployment**:  
+  - Configure Proxy, Reverse Proxy, Docker, & many Deployment options  
+  - Use [S3 with CloudFront](https://www.librechat.ai/docs/configuration/cdn/cloudfront) for stable media links, edge delivery, signed cookies, and secured downloads
+  - Use completely local or deploy on the cloud
 
----
+- 📖 **Open-Source & Community**:  
+  - Completely Open-Source & Built in Public  
+  - Community-driven development, support, and feedback
 
-## ⚠️ إجراءات يدوية مطلوبة (مهمة)
+[For a thorough review of our features, see our docs here](https://docs.librechat.ai/) 📚
 
-1. **إنشاء PostgreSQL database** على Railway أو محلياً
-2. **تشغيل `scripts/setup-database.sql`** لتفعيل pgvector + uuid-ossp
-3. **إنشاء Redis instance** على Railway أو محلياً
-4. **توليد `ENCRYPTION_KEY`**: `openssl rand -base64 32`
-5. **توليد `JWT_SECRET`**: `openssl rand -hex 32`
-6. **(بعد الإقلاع) إضافة المزودين** من لوحة التحكم → Providers → Add Provider
-7. **(بعد الإقلاع) إضافة النماذج** عبر زر "Refresh Models" لكل مزود
+## 🪶 All-In-One AI Conversations with LibreChat
 
----
+LibreChat is a self-hosted AI chat platform that unifies all major AI providers in a single, privacy-focused interface.
 
-## 📖 التوثيق
+Beyond chat, LibreChat provides AI Agents, Model Context Protocol (MCP) support, Artifacts, Code Interpreter, custom actions, conversation search, and enterprise-ready multi-user authentication.
 
-| الملف | المحتوى |
-|------|------|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | التصميم المعماري الكامل |
-| [DATABASE.md](./DATABASE.md) | مخطط قاعدة البيانات |
-| [AGENTS.md](./AGENTS.md) | نظام الوكلاء |
-| [PROVIDERS.md](./PROVIDERS.md) | نظام المزودين |
-| [TOOLS.md](./TOOLS.md) | نظام الأدوات |
-| [MEMORY.md](./MEMORY.md) | نظام الذاكرة |
-| [WORKFLOWS.md](./WORKFLOWS.md) | محرك Workflows |
-| [MCP.md](./MCP.md) | بروتوكول MCP |
-| [API.md](./API.md) | REST API |
+Open source, actively developed, and built for anyone who values control over their AI infrastructure.
 
 ---
 
-## 🎯 المراحل
+## 🌐 Resources
 
-| # | المرحلة | الحالة |
-|---|---------|------|
-| 1 | المعمارية + التوثيق + DB Schema + Core Types | ✅ مكتملة |
-| 2 | Core Implementation: Providers/Memory/Auth | ⏳ التالية |
-| 3 | Agents System: 9 وكلاء + Handoffs | ⏳ |
-| 4 | Tools + MCP + RAG | ⏳ |
-| 5 | Workflows + Background Jobs | ⏳ |
-| 6 | Admin UI + Observability | ⏳ |
-| 7 | Resilience + Tests + Railway Deploy | ⏳ |
+**GitHub Repo:**
+  - **RAG API:** [github.com/danny-avila/rag_api](https://github.com/danny-avila/rag_api)
+  - **Website:** [github.com/LibreChat-AI/librechat.ai](https://github.com/LibreChat-AI/librechat.ai)
 
-**القاعدة**: لا ننتقل للمرحلة التالية قبل استقرار الحالية.
+**Other:**
+  - **Website:** [librechat.ai](https://librechat.ai)
+  - **Documentation:** [librechat.ai/docs](https://librechat.ai/docs)
+  - **Blog:** [librechat.ai/blog](https://librechat.ai/blog)
 
 ---
 
-## 🔌 API Endpoints (الأساسية)
+## 📝 Changelog
 
-| Method | Path | الوصف |
-|--------|------|------|
-| `GET` | `/api/health` | فحص صحة النظام |
-| `GET` | `/api/system` | معلومات النظام والوحدات |
+Keep up with the latest updates by visiting the releases page and notes:
+- [Releases](https://github.com/danny-avila/LibreChat/releases)
+- [Changelog](https://www.librechat.ai/changelog) 
 
-(REST API الكامل سيُبنى في المرحلة 6 — راجع `API.md`)
+**⚠️ Please consult the [changelog](https://www.librechat.ai/changelog) for breaking changes before updating.**
 
 ---
 
-## 🛣️ التوسع المستقبلي
+## ⭐ Star History
 
-- 🎙️ الصوت (Audio)
-- 👁️ الرؤية (Vision)
-- 🌐 Browser Automation
-- 💻 Computer Use
-- 📱 Mobile Apps (REST API جاهز)
-- 🏢 Multi-Tenancy
-- 🛒 Marketplace للإضافات
+<p align="center">
+  <a href="https://star-history.com/#danny-avila/LibreChat&Date">
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
+  </a>
+</p>
+<p align="center">
+  <a href="https://trendshift.io/repositories/4685" target="_blank" style="padding: 10px;">
+    <img src="https://trendshift.io/api/badge/repositories/4685" alt="danny-avila%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
+  </a>
+  <a href="https://runacap.com/ross-index/q1-24/" target="_blank" rel="noopener" style="margin-left: 20px;">
+    <img style="width: 260px; height: 56px" src="https://runacap.com/wp-content/uploads/2024/04/ROSS_badge_white_Q1_2024.svg" alt="ROSS Index - Fastest Growing Open-Source Startups in Q1 2024 | Runa Capital" width="260" height="56"/>
+  </a>
+</p>
+
+---
+
+## ✨ Contributions
+
+Contributions, suggestions, bug reports and fixes are welcome!
+
+For new features, components, or extensions, please open an issue and discuss before sending a PR.
+
+If you'd like to help translate LibreChat into your language, we'd love your contribution! Improving our translations not only makes LibreChat more accessible to users around the world but also enhances the overall user experience. Please check out our [Translation Guide](https://www.librechat.ai/docs/translation).
+
+---
+
+## 💖 This project exists in its current state thanks to all the people who contribute
+
+<a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
+</a>
+
+---
+
+## 🎉 Special Thanks
+
+We thank [Locize](https://locize.com) for their translation management tools that support multiple languages in LibreChat.
+
+<p align="center">
+  <a href="https://locize.com" target="_blank" rel="noopener noreferrer">
+    <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
+  </a>
+</p>

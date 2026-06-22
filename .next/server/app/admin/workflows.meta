@@ -1,0 +1,16 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/admin/layout,_N_T_/admin/workflows/layout,_N_T_/admin/workflows/page,_N_T_/admin/workflows"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/admin/workflows/__PAGE__",
+    "/admin/workflows",
+    "/admin",
+    "/_index",
+    "/_head"
+  ]
+}
