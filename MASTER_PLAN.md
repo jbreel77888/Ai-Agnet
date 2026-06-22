@@ -122,7 +122,12 @@
 - [x] **1.4** إنشاء `src/tools/builtin/file_manager.ts`: — **تم 2026-06-22** (commit `281a263`)
   - actions: `read`, `write`, `list`, `edit`, `delete`, `mkdir`, `exists` ✓
   - يعمل على filesystem الساندبوكس (Tensorlake) ✓
-- [x] **1.5** ربط `file_manager` بـ Workspace Panel (تحديث `/api/sessions/[id]/files` لعرض ملفات الساندبوكس) — **تم جزئياً** (DB-based files already work, sandbox file listing pending)
+- [x] **1.5** ربط `file_manager` بـ Workspace Panel (تحديث `/api/sessions/[id]/files` لعرض ملفات الساندبوكس) — **تم 2026-06-22** (commit `0e0dd7a`)
+  - DB-based files (upload via UI) ✓
+  - **Sandbox file browser** ✓ (NEW — browse /home/tl-user, preview, download)
+  - API: `GET /api/sessions/[id]/sandbox?path=...` (list/preview/download)
+  - UI: `SandboxBrowser` component with file tree, breadcrumbs, preview modal
+  - Path safety: restricted to /home/tl-user (no path traversal)
 - [ ] **1.6** إضافة `file_upload` tool: المستخدم يرفع ملف → يُخزَّن في sandbox
 
 #### 1.C — Code Interpreter (جديد)
