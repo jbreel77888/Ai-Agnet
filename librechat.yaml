@@ -1,14 +1,11 @@
 # ============================================================================
 # LibreChat Configuration — Agent Platform
 # ============================================================================
-# Custom configuration using our OpenCodez provider (OpenAI-compatible)
-# ============================================================================
 
 version: 1.3.13
 
 cache: true
 
-# Custom interface configuration
 interface:
   customWelcome: 'مرحباً! أنا وكيلك الذكي. اختر مهمة أو اكتب طلبك.'
   endpointsMenu: true
@@ -21,21 +18,19 @@ interface:
   multiConvo: true
   obliterate: true
 
-# Registration — disable for now (single admin user)
 registration:
   socialLogins: []
   allowedDomains: []
 
-# File configuration
 fileStrategy: local
 
-# Endpoints configuration
 endpoints:
   custom:
     # ── OpenCodez Provider (OpenAI-compatible) ──────────────────────────
-    # Our primary LLM provider — free models via opencode.ai/zen/v1
+    # OpenCodez works WITHOUT an API key — sending any key causes 401.
+    # Setting apiKey to empty string prevents the Authorization header.
     - name: 'OpenCodez'
-      apiKey: 'opencode-free'
+      apiKey: ''
       baseURL: 'https://opencode.ai/zen/v1'
       models:
         default:
@@ -53,10 +48,5 @@ endpoints:
       summaryModel: 'deepseek-v4-flash-free'
       forcePrompt: false
       modelDisplayLabel: 'OpenCodez'
-      headers:
-        Content-Type: 'application/json'
       addParams:
         stream: true
-      dropParams:
-        - 'temperature'
-        - 'top_p'
