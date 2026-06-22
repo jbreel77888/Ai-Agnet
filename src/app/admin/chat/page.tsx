@@ -39,7 +39,8 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, AlertTriangle, Trash2, RefreshCw, Menu,
-  Activity, Cpu, Coins, Lightbulb, Brain,
+  Activity, Cpu, Coins, Lightbulb, Brain, PanelRightOpen, PanelRightClose,
+  Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -178,45 +179,203 @@ function authHeaders(): Record<string, string> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Empty state
+// EmptyChatState — LibreChat-inspired landing page
 // ─────────────────────────────────────────────────────────────────────────────
-function EmptyChatState({ onSuggest }: { onSuggest: (s: string) => void }) {
-  const suggestions = [
-    'Explain how AI agents work',
-    'Write a Python function to fetch and parse JSON',
-    'Calculate 15 × 37 and explain the steps',
-    'Help me plan a 3-day trip to Tokyo',
-  ];
+interface EmptyChatStateProps {
+  onSuggest: (s: string) => void;
+  models: ModelOption[];
+  selectedModelId: string | null;
+  onSelectModel: (id: string | null) => void;
+  onTogglePlanMode: () => void;
+  planMode: boolean;
+}
+
+const SUGGESTION_CATEGORIES = [
+  {
+    icon: '💻',
+    title: 'Write code',
+    prompt: 'Write a Python function that downloads a file from a URL with progress bar',
+    color: 'from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20',
+    border: 'hover:border-amber-300 dark:hover:border-amber-700',
+  },
+  {
+    icon: '🔍',
+    title: 'Research',
+    prompt: 'Search the web for the latest developments in AI agents and summarize key findings',
+    color: 'from-sky-50 to-blue-50 dark:from-sky-950/20 dark:to-blue-950/20',
+    border: 'hover:border-sky-300 dark:hover:border-sky-700',
+  },
+  {
+    icon: '📊',
+    title: 'Analyze data',
+    prompt: 'Generate a matplotlib chart showing sales trends for Q1 2026 and explain the pattern',
+    color: 'from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20',
+    border: 'hover:border-emerald-300 dark:hover:border-emerald-700',
+  },
+  {
+    icon: '🌐',
+    title: 'Browse web',
+    prompt: 'Navigate to https://news.ycombinator.com and extract the top 5 stories with their URLs',
+    color: 'from-purple-50 to-violet-50 dark:from-purple-950/20 dark:to-violet-950/20',
+    border: 'hover:border-purple-300 dark:hover:border-purple-700',
+  },
+];
+
+function EmptyChatState({
+  onSuggest, models, selectedModelId, onSelectModel, onTogglePlanMode, planMode,
+}: EmptyChatStateProps) {
+  const selectedModel = models.find(m => m.id === selectedModelId);
+
   return (
-    <div className="h-full flex flex-col items-center justify-center text-center px-6 py-12">
-      <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-        className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg mb-4"
-      >
-        <Sparkles className="w-8 h-8" />
-      </motion.div>
-      <h2 className="text-xl font-bold mb-1 tracking-tight">
-        How can I help you today?
-      </h2>
-      <p className="text-sm text-muted-foreground mb-6 max-w-md">
-        One universal agent. It auto-selects the right tools and strategies based on your request —
-        just describe what you need.
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-xl">
-        {suggestions.map((s, i) => (
-          <motion.button
-            key={s}
-            initial={{ opacity: 0, y: 8 }}
+    <div className="h-full flex flex-col items-center justify-center px-6 py-8 overflow-y-auto">
+      <div className="w-full max-w-2xl flex flex-col items-center">
+        {/* Logo / Brand */}
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+          className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 mb-5"
+        >
+          <Sparkles className="w-7 h-7" />
+        </motion.div>
+
+        {/* Greeting */}
+        <motion.h1
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.4 }}
+          className="text-2xl sm:text-3xl font-bold tracking-tight mb-1.5 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent"
+        >
+          How can I help you today?
+        </motion.h1>
+
+        <motion.p
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.4 }}
+          className="text-[13px] text-muted-foreground mb-6 max-w-md text-center"
+        >
+          The agent auto-selects the right specialist (coding, research, reasoning, etc.)
+          and has a persistent sandbox with code execution, file management, and web access.
+        </motion.p>
+
+        {/* Model picker chips */}
+        {models.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 * i, duration: 0.25 }}
-            onClick={() => onSuggest(s)}
-            className="text-left px-4 py-3 rounded-xl border bg-card hover:bg-accent hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors text-[13px] text-foreground/80 hover:text-foreground"
+            transition={{ delay: 0.2, duration: 0.4 }}
+            className="flex flex-wrap items-center justify-center gap-1.5 mb-6"
           >
-            {s}
-          </motion.button>
-        ))}
+            <button
+              onClick={() => onSelectModel(null)}
+              className={`px-3 py-1.5 rounded-full text-[11.5px] font-medium transition-all ${
+                !selectedModelId
+                  ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              <Sparkles className="w-3 h-3 inline mr-1 -mt-0.5" />
+              Auto
+            </button>
+            {models.slice(0, 6).map(m => (
+              <button
+                key={m.id}
+                onClick={() => onSelectModel(m.id)}
+                className={`px-3 py-1.5 rounded-full text-[11.5px] font-medium transition-all flex items-center gap-1 ${
+                  selectedModelId === m.id
+                    ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+                title={m.providerName}
+              >
+                {m.supportsThinking && <Brain className="w-3 h-3" />}
+                <span className="truncate max-w-[100px]">{m.displayName || m.name}</span>
+              </button>
+            ))}
+          </motion.div>
+        )}
+
+        {/* Suggestion cards grid — LibreChat style */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3, duration: 0.4 }}
+          className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full mb-4"
+        >
+          {SUGGESTION_CATEGORIES.map((cat, i) => (
+            <motion.button
+              key={cat.title}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35 + i * 0.05, duration: 0.3 }}
+              onClick={() => onSuggest(cat.prompt)}
+              className={`text-left p-3.5 rounded-xl border border-slate-200/70 dark:border-slate-800/70 bg-gradient-to-br ${cat.color} ${cat.border} transition-all hover:shadow-md hover:-translate-y-0.5 group`}
+            >
+              <div className="flex items-start gap-2.5">
+                <span className="text-xl flex-shrink-0">{cat.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-foreground mb-0.5">
+                    {cat.title}
+                  </p>
+                  <p className="text-[11.5px] text-muted-foreground line-clamp-2 leading-relaxed">
+                    {cat.prompt}
+                  </p>
+                </div>
+              </div>
+            </motion.button>
+          ))}
+        </motion.div>
+
+        {/* Plan mode toggle */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5, duration: 0.4 }}
+          className="flex items-center gap-2"
+        >
+          <button
+            onClick={onTogglePlanMode}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] font-medium transition-all ${
+              planMode
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            }`}
+          >
+            <Lightbulb className={`w-3.5 h-3.5 ${planMode ? 'fill-amber-400/30 text-amber-500' : ''}`} />
+            Plan Mode {planMode && <span className="text-[9px] uppercase">on</span>}
+          </button>
+          {selectedModel && (
+            <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <Cpu className="w-3 h-3" />
+              {selectedModel.displayName || selectedModel.name}
+              {selectedModel.supportsThinking && <Brain className="w-3 h-3 text-purple-500" />}
+              {selectedModel.supportsTools && <Wrench className="w-3 h-3 text-cyan-500" />}
+            </span>
+          )}
+        </motion.div>
+
+        {/* Feature badges */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6, duration: 0.4 }}
+          className="flex flex-wrap items-center justify-center gap-2 mt-6 text-[10px] text-muted-foreground/60"
+        >
+          {[
+            { label: 'Stateful Sandbox', icon: '🖥️' },
+            { label: 'Code Execution', icon: '⚡' },
+            { label: 'Web Search', icon: '🔍' },
+            { label: 'File Manager', icon: '📁' },
+            { label: 'RAG', icon: '🧠' },
+            { label: 'Multi-Agent', icon: '🤖' },
+          ].map(f => (
+            <span key={f.label} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/40">
+              <span>{f.icon}</span>
+              {f.label}
+            </span>
+          ))}
+        </motion.div>
       </div>
     </div>
   );
@@ -926,15 +1085,23 @@ export default function ChatPage() {
                 onSuggest={(s) => {
                   setInput(s);
                 }}
+                models={models}
+                selectedModelId={modelMode.modelId}
+                onSelectModel={(id) => setModelMode(prev => ({ ...prev, modelId: id }))}
+                onTogglePlanMode={() => setPlanMode(v => !v)}
+                planMode={planMode}
               />
             ) : messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center px-6">
-                <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mb-3">
-                  <Sparkles className="w-7 h-7 text-muted-foreground" />
-                </div>
-                <p className="text-sm font-medium mb-1">Empty conversation</p>
-                <p className="text-xs text-muted-foreground">Send a message to begin</p>
-              </div>
+              <EmptyChatState
+                onSuggest={(s) => {
+                  setInput(s);
+                }}
+                models={models}
+                selectedModelId={modelMode.modelId}
+                onSelectModel={(id) => setModelMode(prev => ({ ...prev, modelId: id }))}
+                onTogglePlanMode={() => setPlanMode(v => !v)}
+                planMode={planMode}
+              />
             ) : (
               <div className="max-w-3xl mx-auto px-3 sm:px-6 py-4">
                 {messages.map((msg) => (

@@ -154,9 +154,9 @@ function SidebarBody({
         </div>
       </div>
 
-      {/* Sessions list */}
+      {/* Sessions list — grouped by date (LibreChat style) */}
       <ScrollArea className="flex-1 min-h-0">
-        <div className="px-2 py-2 space-y-0.5">
+        <div className="px-2 py-2 space-y-3">
           {filteredSessions.length === 0 ? (
             <div className="px-3 py-10 text-center">
               <Sparkles className="w-6 h-6 text-slate-600 mx-auto mb-2" />
@@ -170,44 +170,80 @@ function SidebarBody({
               )}
             </div>
           ) : (
-            filteredSessions.map(s => {
-              const isActive = currentSessionId === s.id;
-              return (
-                <div
-                  key={s.id}
-                  onClick={() => handleSelect(s.id)}
-                  className={`group relative flex items-start gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors ${
-                    isActive
-                      ? 'bg-slate-800 ring-1 ring-slate-700'
-                      : 'hover:bg-slate-900'
-                  }`}
-                >
-                  <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-[12px] truncate ${isActive ? 'text-white font-medium' : 'text-slate-200'}`}>
-                      {s.title}
+            (() => {
+              // Group sessions by time period
+              const now = Date.now();
+              const groups: Record<string, typeof filteredSessions> = {
+                'Today': [],
+                'Yesterday': [],
+                'Previous 7 Days': [],
+                'Previous 30 Days': [],
+                'Older': [],
+              };
+              for (const s of filteredSessions) {
+                const d = new Date(s.lastActivityAt).getTime();
+                const diffDays = (now - d) / (1000 * 60 * 60 * 24);
+                if (diffDays < 1) groups['Today'].push(s);
+                else if (diffDays < 2) groups['Yesterday'].push(s);
+                else if (diffDays < 7) groups['Previous 7 Days'].push(s);
+                else if (diffDays < 30) groups['Previous 30 Days'].push(s);
+                else groups['Older'].push(s);
+              }
+
+              return Object.entries(groups).map(([groupName, sessions]) => {
+                if (sessions.length === 0) return null;
+                return (
+                  <div key={groupName} className="space-y-0.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 px-2.5 py-1">
+                      {groupName}
                     </p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] text-slate-500 flex-shrink-0">
-                        {relativeTime(s.lastActivityAt)}
-                      </span>
-                      {s.messageCount !== undefined && s.messageCount > 0 && (
-                        <Badge variant="secondary" className="text-[9px] h-3.5 px-1 ml-auto bg-slate-800 text-slate-400">
-                          {s.messageCount}
-                        </Badge>
-                      )}
-                    </div>
+                    {sessions.map(s => {
+                      const isActive = currentSessionId === s.id;
+                      return (
+                        <div
+                          key={s.id}
+                          onClick={() => handleSelect(s.id)}
+                          className={`group relative flex items-start gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors ${
+                            isActive
+                              ? 'bg-slate-800 ring-1 ring-slate-700'
+                              : 'hover:bg-slate-900'
+                          }`}
+                        >
+                          <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[12px] truncate ${isActive ? 'text-white font-medium' : 'text-slate-200'}`}>
+                              {s.title}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] text-slate-500 flex-shrink-0">
+                                {relativeTime(s.lastActivityAt)}
+                              </span>
+                              {s.messageCount !== undefined && s.messageCount > 0 && (
+                                <Badge variant="secondary" className="text-[9px] h-3.5 px-1 ml-auto bg-slate-800 text-slate-400">
+                                  {s.messageCount}
+                                </Badge>
+                              )}
+                              {s.totalTokens !== undefined && s.totalTokens > 0 && (
+                                <span className="text-[9px] text-slate-600 font-mono hidden sm:inline">
+                                  · {s.totalTokens > 1000 ? `${(s.totalTokens / 1000).toFixed(1)}k` : s.totalTokens} tok
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id); }}
+                            className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-all"
+                            aria-label="Delete session"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id); }}
-                    className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-all"
-                    aria-label="Delete session"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              );
-            })
+                );
+              });
+            })()
           )}
         </div>
       </ScrollArea>
