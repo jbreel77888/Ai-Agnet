@@ -167,24 +167,39 @@ export default function BadgeRowProvider({
       }
 
       setEphemeralAgent((prev) => {
+        // ── Force-enable all tools by default (Manus-style) ──────────────
+        // The Universal Agent should have all tools always enabled.
+        // Users don't need to manually toggle tools — the agent decides
+        // automatically which to use based on the request.
+        const forcedDefaults: Record<string, boolean | string> = {
+          [Tools.execute_code]: true,
+          [Tools.web_search]: true,
+          [Tools.file_search]: true,
+          ...initialValues, // localStorage overrides take precedence if set
+        };
+
         if (prev == null) {
-          /** ephemeralAgent is null — use localStorage defaults */
-          if (hasOverrides || mcpOverrides) {
-            const result: TEphemeralAgent = { ...initialValues };
-            if (mcpOverrides) {
-              result.mcp = mcpOverrides;
-            }
-            return result;
+          /** ephemeralAgent is null — use forced defaults + localStorage */
+          const result: TEphemeralAgent = { ...forcedDefaults };
+          if (mcpOverrides) {
+            result.mcp = mcpOverrides;
           }
-          return prev;
+          return result;
         }
         /** ephemeralAgent already has values (from prior state).
-         *  Only fill in undefined keys from localStorage. */
+         *  Fill in undefined keys with forced defaults + localStorage. */
         let changed = false;
         const result = { ...prev };
-        for (const [toolKey, value] of Object.entries(initialValues)) {
+        for (const [toolKey, value] of Object.entries(forcedDefaults)) {
           if (result[toolKey] === undefined) {
             result[toolKey] = value;
+            changed = true;
+          }
+        }
+        // Also force-enable if somehow set to false
+        for (const toolKey of [Tools.execute_code, Tools.web_search, Tools.file_search]) {
+          if (result[toolKey] === false || result[toolKey] === undefined) {
+            result[toolKey] = true;
             changed = true;
           }
         }
