@@ -34,6 +34,7 @@ const {
   TavilySearchResults,
   createGeminiImageTool,
   createOpenAIImageTools,
+  TensorlakeCodeInterpreter,
 } = require('../');
 const {
   createMCPTool,
@@ -185,6 +186,7 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    tensorlake_code_interpreter: TensorlakeCodeInterpreter,
   };
 
   const customConstructors = {
