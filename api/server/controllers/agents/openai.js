@@ -165,10 +165,16 @@ const OpenAIChatCompletionController = async (req, res) => {
   }
 
   const request = validation.request;
-  const agentId = request.model;
-
-  // Look up the agent
-  const agent = await db.getAgent({ id: agentId });
+  // ── Universal Agent auto-selection ──────────────────────────────────
+  // When using the agents endpoint, the 'model' field is the agent_id.
+  // If it doesn't match a real agent, default to 'universal-agent'.
+  let agentId = request.model;
+  let agent = await db.getAgent({ id: agentId });
+  if (!agent) {
+    // Try the Universal Agent
+    agentId = 'universal-agent';
+    agent = await db.getAgent({ id: agentId });
+  }
   if (!agent) {
     return sendErrorResponse(
       res,
