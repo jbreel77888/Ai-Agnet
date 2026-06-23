@@ -79,6 +79,13 @@ const buildDefaultConvo = ({
     defaultConvo.agent_id = agentId;
   }
 
+  // ── Force Universal Agent for agents endpoint (Manus-style) ────────
+  // When using the agents endpoint, always use the Universal Agent.
+  // Don't use ephemeral agents — always the real Universal Agent.
+  if (isAgentsEndpoint(endpoint)) {
+    defaultConvo.agent_id = 'universal-agent';
+  }
+
   // Clear model for non-ephemeral agents - agents use their configured model internally
   clearModelForNonEphemeralAgent(defaultConvo);
 
