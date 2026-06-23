@@ -164,6 +164,13 @@ const canAccessAgentFromBody = (options) => {
         agentId = Constants.EPHEMERAL_AGENT_ID;
       }
 
+      // ── Auto-select Universal Agent if no agent_id provided ───────────
+      // When using the agents endpoint, default to the Universal Agent
+      // (Manus-style: user doesn't need to select an agent manually)
+      if (!agentId && isAgentsEndpoint(endpoint)) {
+        agentId = 'universal-agent';
+      }
+
       if (!agentId) {
         return res.status(400).json({
           error: 'Bad Request',

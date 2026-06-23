@@ -1,9 +1,6 @@
 # ============================================================================
 # LibreChat Configuration — Universal Agent (Manus-style)
 # ============================================================================
-# Single Universal Agent. User just opens chat and types.
-# No agent picker, no endpoint menu — like Manus AI.
-# ============================================================================
 
 version: 1.3.13
 
@@ -28,16 +25,6 @@ registration:
 fileStrategy: local
 
 endpoints:
-  # Disable agent builder — users cannot create custom agents
-  agents:
-    disableBuilder: true
-    recursionLimit: 50
-    capabilities:
-      - 'tools'
-      - 'code_interpreter'
-      - 'file_search'
-      - 'image_vision'
-
   custom:
     - name: 'OpenCodez'
       apiKey: 'no-key-needed'

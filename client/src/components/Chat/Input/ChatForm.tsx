@@ -378,9 +378,8 @@ const ChatForm = memo(function ChatForm({
               <BadgeRow
                 showEphemeralBadges={
                   !!endpoint &&
-                  !hideBadgeRow &&
-                  !isAgentsEndpoint(endpoint) &&
-                  !isAssistantsEndpoint(endpoint)
+                  !hideBadgeRow
+                  /* MCP button always visible — tools are auto-enabled */
                 }
                 isSubmitting={isSubmitting}
                 conversationId={conversationId}
