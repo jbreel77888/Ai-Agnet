@@ -51,6 +51,7 @@ RUN \
         sleep 10 ; \
     done
 
+# Cache bust: ${CACHE_BUST}
 COPY --chown=node:node . .
 
 RUN \
@@ -66,6 +67,7 @@ RUN \
 # git resolution (if .git is present), and finally to empty values.
 ARG BUILD_COMMIT=
 ARG BUILD_BRANCH=
+ARG CACHE_BUST=1
 ARG BUILD_DATE=
 ENV BUILD_COMMIT=${BUILD_COMMIT}
 ENV BUILD_BRANCH=${BUILD_BRANCH}
