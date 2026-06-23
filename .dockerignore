@@ -17,3 +17,5 @@ docs
 
 # IMPORTANT: Do NOT ignore librechat.yaml — it's needed for custom endpoints
 !librechat.yaml
+client/dist
+client/node_modules
