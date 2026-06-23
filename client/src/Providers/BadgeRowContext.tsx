@@ -167,39 +167,29 @@ export default function BadgeRowProvider({
       }
 
       setEphemeralAgent((prev) => {
-        // ── Force-enable all tools by default (Manus-style) ──────────────
-        // The Universal Agent should have all tools always enabled.
-        // Users don't need to manually toggle tools — the agent decides
-        // automatically which to use based on the request.
-        const forcedDefaults: Record<string, boolean | string> = {
-          [Tools.execute_code]: true,
-          [Tools.web_search]: true,
-          [Tools.file_search]: true,
-          ...initialValues, // localStorage overrides take precedence if set
-        };
-
+        // ── Don't force-enable built-in tools ────────────────────────────
+        // The Universal Agent has custom tools (tensorlake_code_interpreter,
+        // tavily_search_results_json) in its tools list in the DB.
+        // We do NOT enable the built-in execute_code/web_search/file_search
+        // because those use LibreChat's internal sandbox (/mnt/data/) which
+        // doesn't work. Our custom tools use Tensorlake (/home/tl-user/).
+        //
+        // The agent's tools list is the source of truth for which tools
+        // are available. No manual toggling needed.
+        
         if (prev == null) {
-          /** ephemeralAgent is null — use forced defaults + localStorage */
-          const result: TEphemeralAgent = { ...forcedDefaults };
+          const result: TEphemeralAgent = { ...initialValues };
           if (mcpOverrides) {
             result.mcp = mcpOverrides;
           }
-          return result;
+          return Object.keys(result).length > 0 ? result : prev;
         }
-        /** ephemeralAgent already has values (from prior state).
-         *  Fill in undefined keys with forced defaults + localStorage. */
+        
         let changed = false;
         const result = { ...prev };
-        for (const [toolKey, value] of Object.entries(forcedDefaults)) {
+        for (const [toolKey, value] of Object.entries(initialValues)) {
           if (result[toolKey] === undefined) {
             result[toolKey] = value;
-            changed = true;
-          }
-        }
-        // Also force-enable if somehow set to false
-        for (const toolKey of [Tools.execute_code, Tools.web_search, Tools.file_search]) {
-          if (result[toolKey] === false || result[toolKey] === undefined) {
-            result[toolKey] = true;
             changed = true;
           }
         }
