@@ -239,18 +239,21 @@ const startServer = async () => {
   // ── OpenCodez Proxy ───────────────────────────────────────────────────
   // OpenCodez API doesn't need an API key, but LibreChat's OpenAI SDK
   // always sends Authorization: Bearer. This proxy strips it.
+  // Also properly streams SSE responses without buffering (fixes UI freeze).
   app.use('/api/opencodez', async (req, res) => {
-    // req.url is relative to mount point: "/v1/chat/completions"
-    // OpenCodez base is "https://opencode.ai/zen" (without /v1 since req.url has it)
     const targetUrl = `https://opencode.ai/zen${req.url}`;
     console.log(`[OpenCodez Proxy] ${req.method} ${req.url} → ${targetUrl}`);
 
     try {
+      // Check if the request body has stream:true — force SSE response
+      const bodyStr = req.body ? JSON.stringify(req.body) : '';
+      const isStreamRequest = req.body?.stream === true || bodyStr.includes('"stream":true');
+
       const fetchOptions = {
         method: req.method,
         headers: {
           'Content-Type': 'application/json',
-          'Accept': req.headers['accept'] || 'application/json',
+          'Accept': isStreamRequest ? 'text/event-stream' : 'application/json',
         },
       };
 
@@ -258,32 +261,50 @@ const startServer = async () => {
         fetchOptions.body = JSON.stringify(req.body);
       }
 
-    const proxyResponse = await fetch(targetUrl, fetchOptions);
-    const contentType = proxyResponse.headers.get('content-type') || '';
-    console.log(`[OpenCodez Proxy] Response: ${proxyResponse.status} ${contentType}`);
+      const proxyResponse = await fetch(targetUrl, fetchOptions);
+      const contentType = proxyResponse.headers.get('content-type') || '';
+      console.log(`[OpenCodez Proxy] Response: ${proxyResponse.status} ${contentType}`);
 
-    res.status(proxyResponse.status);
-    res.setHeader('Content-Type', contentType);
+      res.status(proxyResponse.status);
 
-    // Stream SSE responses
-    if (contentType.includes('text/event-stream')) {
-      const reader = proxyResponse.body.getReader();
-      const decoder = new TextDecoder();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(decoder.decode(value, { stream: true }));
+      // For streaming responses, set proper headers and flush immediately
+      if (contentType.includes('text/event-stream') || isStreamRequest) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+        res.flushHeaders();
+
+        const reader = proxyResponse.body.getReader();
+        const decoder = new TextDecoder();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            res.write(chunk);
+            // Flush immediately — don't buffer
+            if (typeof res.flush === 'function') {
+              res.flush();
+            }
+          }
+        } catch (e) {
+          console.log('[OpenCodez Proxy] Stream ended (client disconnect)');
         }
-      } catch (e) { /* client disconnect */ }
-      res.end();
-    } else {
-      const text = await proxyResponse.text();
-      res.send(text);
-    }
+        res.end();
+      } else {
+        // Non-streaming: return full response
+        res.setHeader('Content-Type', contentType);
+        const text = await proxyResponse.text();
+        res.send(text);
+      }
     } catch (err) {
       console.error('[OpenCodez Proxy] Error:', err.message);
-      res.status(502).json({ error: { type: 'proxy_error', message: err.message } });
+      if (!res.headersSent) {
+        res.status(502).json({ error: { type: 'proxy_error', message: err.message } });
+      } else {
+        res.end();
+      }
     }
   });
 

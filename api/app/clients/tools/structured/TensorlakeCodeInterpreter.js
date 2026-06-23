@@ -4,13 +4,9 @@
  * Replaces LibreChat's built-in code interpreter with a persistent Tensorlake
  * MicroVM sandbox per session. Supports Python, JavaScript, and Bash.
  *
- * Files written in one call persist for subsequent calls within the same
- * conversation session — just like Manus AI.
- *
  * Requires TENSORLAKE_API_KEY environment variable.
  */
 const { Tool } = require('@librechat/agents/langchain/tools');
-const { getEnvironmentVariable } = require('@librechat/agents/langchain/utils/env');
 
 const tensorlakeSchema = {
   type: 'object',
@@ -40,26 +36,36 @@ class TensorlakeCodeInterpreter extends Tool {
       'generating charts, testing code, automating tasks.';
     this.schema = tensorlakeSchema;
     this.envVar = 'TENSORLAKE_API_KEY';
-    this.apiKey = fields[this.envVar] ?? this.getApiKey();
 
-    // Cache sandboxes per conversation (keyed by conversationId)
+    // Use process.env directly — more reliable than getEnvironmentVariable
+    // Also check fields (from plugin auth DB)
+    this.apiKey = fields[this.envVar] || process.env[this.envVar] || fields.TENSORLAKE_API_KEY;
+
+    // Don't throw in constructor — lazy-load in _call
+    if (!this.apiKey) {
+      console.warn('[TensorlakeCodeInterpreter] No API key found in fields or env, will try at runtime');
+    }
+
+    // Cache sandboxes per conversation
     this.sandboxes = new Map();
   }
 
+  /**
+   * Get API key — try multiple sources
+   */
   getApiKey() {
-    const apiKey = getEnvironmentVariable(this.envVar);
-    if (!apiKey) {
-      throw new Error(
-        'Missing TENSORLAKE_API_KEY environment variable. ' +
-          'Add it in the environment configuration.',
-      );
+    if (this.apiKey) return this.apiKey;
+    // Try process.env directly
+    const key = process.env.TENSORLAKE_API_KEY;
+    if (key) {
+      this.apiKey = key;
+      return key;
     }
-    return apiKey;
+    throw new Error('TENSORLAKE_API_KEY not found in environment or plugin auth');
   }
 
   /**
    * Get or create a sandbox for the current conversation.
-   * Uses conversationId as the cache key so files persist across calls.
    */
   async getSandbox(conversationId) {
     if (!conversationId) {
@@ -69,20 +75,19 @@ class TensorlakeCodeInterpreter extends Tool {
     // Check cache
     if (this.sandboxes.has(conversationId)) {
       const cached = this.sandboxes.get(conversationId);
-      // Verify it's still alive
       try {
         await cached.status();
         return cached;
       } catch {
-        // Dead — recreate
         this.sandboxes.delete(conversationId);
       }
     }
 
     // Create new sandbox
+    const apiKey = this.getApiKey();
     const { Sandbox } = await import('tensorlake');
     const sandbox = await Sandbox.create({
-      apiKey: this.apiKey,
+      apiKey,
       name: `lc-${conversationId.slice(0, 12)}`,
       memoryMb: 1024,
       diskMb: 10000,
@@ -101,14 +106,12 @@ class TensorlakeCodeInterpreter extends Tool {
       return 'Error: code is required';
     }
 
-    // Get conversation ID from tool context (LibreChat passes this)
     const conversationId = this.metadata?.conversationId || this.metadata?.sessionId || 'default';
 
     try {
       const sandbox = await this.getSandbox(conversationId);
       const workDir = '/home/tl-user';
 
-      // Determine file path and command based on language
       let filePath, command, cmdArgs;
 
       switch (language) {
@@ -134,7 +137,6 @@ class TensorlakeCodeInterpreter extends Tool {
           return `Error: Unsupported language "${language}". Use: python, javascript, or bash`;
       }
 
-      // Execute
       const result = await sandbox.run(command, {
         args: cmdArgs,
         workDir,
@@ -146,7 +148,6 @@ class TensorlakeCodeInterpreter extends Tool {
       const stderr = (result).stderr || '';
       const exitCode = (result).exitCode ?? 0;
 
-      // Format output
       let output = '';
       if (stdout) {
         output += stdout.length > 8000
@@ -162,7 +163,7 @@ class TensorlakeCodeInterpreter extends Tool {
         output += (output ? '\n' : '') + `Exit code: ${exitCode}`;
       }
 
-      // Check for generated files (charts, data, etc.)
+      // Check for generated files
       try {
         const dirListing = await sandbox.listDirectory(workDir);
         const entries = (dirListing).entries || (dirListing).files || dirListing;
@@ -187,6 +188,7 @@ class TensorlakeCodeInterpreter extends Tool {
 
       return output || '(no output)';
     } catch (err) {
+      console.error('[TensorlakeCodeInterpreter] Error:', err.message);
       return `Error: ${err.message}`;
     }
   }
