@@ -1,5 +1,8 @@
 # ============================================================================
-# LibreChat Configuration — Universal Agent (Manus-style)
+# LibreChat Configuration — Universal Agent Platform (Manus-style)
+# ============================================================================
+# Validated against configSchema (Zod strict mode) — no bypass needed.
+# Schema source: packages/data-provider/src/config.ts
 # ============================================================================
 
 version: 1.3.13
@@ -25,6 +28,14 @@ registration:
 fileStrategy: local
 
 endpoints:
+  agents:
+    disableBuilder: true
+    recursionLimit: 50
+    capabilities:
+      - tools
+      - file_search
+      - image_vision
+
   custom:
     - name: 'OpenCodez'
       apiKey: 'no-key-needed'
@@ -33,8 +44,6 @@ endpoints:
         default:
           - 'deepseek-v4-flash-free'
           - 'mimo-v2.5-free'
-          - 'qwen3.6-plus-free'
-          - 'minimax-m3-free'
           - 'nemotron-3-ultra-free'
           - 'north-mini-code-free'
         fetch: false
@@ -48,5 +57,5 @@ endpoints:
       addParams:
         stream: true
       dropParams:
-        - 'temperature'
-        - 'top_p'
+        - temperature
+        - top_p
