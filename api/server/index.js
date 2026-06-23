@@ -240,7 +240,9 @@ const startServer = async () => {
   // OpenCodez API doesn't need an API key, but LibreChat's OpenAI SDK
   // always sends Authorization: Bearer. This proxy strips it.
   app.use('/api/opencodez', async (req, res) => {
-    const targetUrl = `https://opencode.ai/zen/v1${req.url}`;
+    // req.url is relative to mount point: "/v1/chat/completions"
+    // OpenCodez base is "https://opencode.ai/zen" (without /v1 since req.url has it)
+    const targetUrl = `https://opencode.ai/zen${req.url}`;
     console.log(`[OpenCodez Proxy] ${req.method} ${req.url} → ${targetUrl}`);
 
     try {
