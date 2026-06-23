@@ -81,7 +81,9 @@ class TensorlakeCodeInterpreter extends Tool {
    */
   async getSandbox(conversationId) {
     if (!conversationId) {
-      conversationId = 'default';
+      // Generate a random short ID for this tool instance so we don't
+      // collide with the static 'default' name across multiple sessions.
+      conversationId = 'anon-' + Math.random().toString(36).slice(2, 10);
     }
 
     // Reuse cached sandbox if still alive
@@ -97,11 +99,15 @@ class TensorlakeCodeInterpreter extends Tool {
     }
 
     // Create new sandbox — use require() instead of dynamic import() for CJS compat
+    // Name must be unique across the workspace, so append a short random suffix
+    // even when conversationId is provided (in case of process restarts).
     const apiKey = this.getApiKey();
     const { Sandbox } = require('tensorlake');
+    const uniqueSuffix = Math.random().toString(36).slice(2, 8);
+    const sandboxName = `lc-${conversationId.slice(0, 18)}-${uniqueSuffix}`;
     const sandbox = await Sandbox.create({
       apiKey,
-      name: `lc-${conversationId.slice(0, 12)}`,
+      name: sandboxName,
       memoryMb: 1024,
       diskMb: 10000,
       vcpus: 1.0,
