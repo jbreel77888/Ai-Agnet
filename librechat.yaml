@@ -1,8 +1,6 @@
 # ============================================================================
 # LibreChat Configuration — Universal Agent Platform
 # ============================================================================
-# Single Universal Agent with auto-tool selection (like Manus AI)
-# ============================================================================
 
 version: 1.3.13
 
@@ -27,11 +25,6 @@ registration:
 fileStrategy: local
 
 endpoints:
-  # Disable default OpenAI endpoint — use only custom (OpenCodez)
-  default:
-    - "openAI"
-    - "anthropic"
-    - "google"
   custom:
     - name: 'OpenCodez'
       apiKey: 'no-key-needed'
@@ -57,12 +50,3 @@ endpoints:
       dropParams:
         - 'temperature'
         - 'top_p'
-
-  # Agents configuration — enable agents endpoint with all capabilities
-  agents:
-    capabilities:
-      - 'tools'
-      - 'code_interpreter'
-      - 'file_search'
-      - 'image_vision'
-    recursionLimit: 50
