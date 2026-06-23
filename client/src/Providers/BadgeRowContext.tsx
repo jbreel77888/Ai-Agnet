@@ -167,26 +167,32 @@ export default function BadgeRowProvider({
       }
 
       setEphemeralAgent((prev) => {
-        // ── Don't force-enable built-in tools ────────────────────────────
-        // The Universal Agent has custom tools (tensorlake_code_interpreter,
-        // tavily_search_results_json) in its tools list in the DB.
-        // We do NOT enable the built-in execute_code/web_search/file_search
-        // because those use LibreChat's internal sandbox (/mnt/data/) which
-        // doesn't work. Our custom tools use Tensorlake (/home/tl-user/).
-        //
-        // The agent's tools list is the source of truth for which tools
-        // are available. No manual toggling needed.
+        // ── Force-enable web_search only (Manus-style) ───────────────────
+        // web_search uses Tavily (built-in, works great)
+        // execute_code uses LibreChat's internal sandbox (/mnt/data/) — BROKEN, don't enable
+        // file_search — not needed for now
+        // tensorlake_code_interpreter is loaded from agent's tools list in DB
         
+        const forcedDefaults: Record<string, boolean | string> = {
+          [Tools.web_search]: true,  // Always enable web search (Tavily)
+          ...initialValues,
+        };
+
         if (prev == null) {
-          const result: TEphemeralAgent = { ...initialValues };
+          const result: TEphemeralAgent = { ...forcedDefaults };
           if (mcpOverrides) {
             result.mcp = mcpOverrides;
           }
-          return Object.keys(result).length > 0 ? result : prev;
+          return result;
         }
         
         let changed = false;
         const result = { ...prev };
+        // Force-enable web_search if not set or false
+        if (result[Tools.web_search] !== true) {
+          result[Tools.web_search] = true;
+          changed = true;
+        }
         for (const [toolKey, value] of Object.entries(initialValues)) {
           if (result[toolKey] === undefined) {
             result[toolKey] = value;
