@@ -1,9 +1,6 @@
 # ============================================================================
 # LibreChat Configuration — Universal Agent Platform (Manus-style)
 # ============================================================================
-# Validated against configSchema (Zod strict mode) — no bypass needed.
-# Schema source: packages/data-provider/src/config.ts
-# ============================================================================
 
 version: 1.3.13
 
@@ -34,7 +31,10 @@ endpoints:
     capabilities:
       - tools
       - file_search
-      - image_vision
+      - web_search
+      - execute_code
+      - artifacts
+      - context
 
   custom:
     - name: 'OpenCodez'
