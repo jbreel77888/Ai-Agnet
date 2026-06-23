@@ -19,8 +19,9 @@ const router = express.Router();
 const OPENCODEZ_BASE = 'https://opencode.ai/zen/v1';
 
 // Proxy all requests to OpenCodez, stripping the Authorization header
-router.all('/*', async (req, res) => {
-  const path = req.params[0] || '';
+// Express 5 (path-to-regexp v8) requires named params, not /*
+router.use(async (req, res) => {
+  const path = req.url.replace(/^\//, '');
   const targetUrl = `${OPENCODEZ_BASE}/${path}`;
 
   // Clone headers but remove Authorization
