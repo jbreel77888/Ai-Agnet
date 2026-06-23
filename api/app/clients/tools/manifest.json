@@ -166,5 +166,18 @@
         "optional": true
       }
     ]
+  },
+  {
+    "name": "Tensorlake Code Interpreter",
+    "pluginKey": "tensorlake_code_interpreter",
+    "description": "Execute code (Python, JavaScript, Bash) in a persistent sandbox. Files persist across calls. Replaces built-in code interpreter with a full Ubuntu MicroVM.",
+    "icon": "assets/tavily.svg",
+    "authConfig": [
+      {
+        "authField": "TENSORLAKE_API_KEY",
+        "label": "Tensorlake API Key",
+        "description": "Get your API key from Tensorlake"
+      }
+    ]
   }
 ]
