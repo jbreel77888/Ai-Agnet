@@ -36,6 +36,7 @@ const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
 const rum = require('./rum');
+const opencodezProxy = require('./opencodezProxy');
 
 module.exports = {
   opencodezProxy,
@@ -79,5 +80,3 @@ module.exports = {
   accessPermissions,
 };
 
-// OpenCodez proxy — strips Authorization header
-const opencodezProxy = require('./opencodezProxy');
