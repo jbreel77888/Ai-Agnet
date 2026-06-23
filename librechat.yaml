@@ -31,8 +31,6 @@ endpoints:
     capabilities:
       - tools
       - file_search
-      - web_search
-      - execute_code
       - artifacts
       - context
 
