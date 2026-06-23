@@ -235,7 +235,56 @@ const startServer = async () => {
    * The reverse proxy / auth gateway sets `X-Tenant-Id` header for multi-tenant deployments. */
   app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
   /* API Endpoints */
-  app.use('/api/opencodez', routes.opencodezProxy);
+
+  // ── OpenCodez Proxy ───────────────────────────────────────────────────
+  // OpenCodez API doesn't need an API key, but LibreChat's OpenAI SDK
+  // always sends Authorization: Bearer. This proxy strips it.
+  app.use('/api/opencodez', async (req, res) => {
+    const targetUrl = `https://opencode.ai/zen/v1${req.url}`;
+    console.log(`[OpenCodez Proxy] ${req.method} ${req.url} → ${targetUrl}`);
+
+    try {
+      const fetchOptions = {
+        method: req.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': req.headers['accept'] || 'application/json',
+        },
+      };
+
+      if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+        fetchOptions.body = JSON.stringify(req.body);
+      }
+
+    const proxyResponse = await fetch(targetUrl, fetchOptions);
+    const contentType = proxyResponse.headers.get('content-type') || '';
+    console.log(`[OpenCodez Proxy] Response: ${proxyResponse.status} ${contentType}`);
+
+    res.status(proxyResponse.status);
+    res.setHeader('Content-Type', contentType);
+
+    // Stream SSE responses
+    if (contentType.includes('text/event-stream')) {
+      const reader = proxyResponse.body.getReader();
+      const decoder = new TextDecoder();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(decoder.decode(value, { stream: true }));
+        }
+      } catch (e) { /* client disconnect */ }
+      res.end();
+    } else {
+      const text = await proxyResponse.text();
+      res.send(text);
+    }
+    } catch (err) {
+      console.error('[OpenCodez Proxy] Error:', err.message);
+      res.status(502).json({ error: { type: 'proxy_error', message: err.message } });
+    }
+  });
+
   app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
