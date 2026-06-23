@@ -5,7 +5,7 @@
  * Sending `Authorization: Bearer xxx` causes 401 errors.
  *
  * This proxy:
- *   1. Receives requests at /api/opencodez/v1/*
+ *   1. Receives requests at /api/opencodez/*
  *   2. Removes the Authorization header
  *   3. Forwards to https://opencode.ai/zen/v1/*
  *   4. Streams the response back (supports SSE)
@@ -18,18 +18,21 @@ const router = express.Router();
 
 const OPENCODEZ_BASE = 'https://opencode.ai/zen/v1';
 
-// Proxy all requests to OpenCodez, stripping the Authorization header
-// Express 5 (path-to-regexp v8) requires named params, not /*
-router.use(async (req, res) => {
-  const path = req.url.replace(/^\//, '');
-  const targetUrl = `${OPENCODEZ_BASE}/${path}`;
+// Middleware: log all requests for debugging
+router.use((req, _res, next) => {
+  console.log(`[OpenCodez Proxy] ${req.method} ${req.url}`);
+  next();
+});
 
-  // Clone headers but remove Authorization
-  const headers = { ...req.headers };
-  delete headers['authorization'];
-  delete headers['host'];
-  delete headers['connection'];
-  headers['host'] = 'opencode.ai';
+// Catch-all handler for all methods and paths
+router.use(async (req, res) => {
+  // req.url is relative to the mount point (/api/opencodez)
+  // e.g., "/v1/chat/completions"
+  const targetUrl = `${OPENCODEZ_BASE}${req.url}`;
+
+  console.log(`[OpenCodez Proxy] Forwarding to: ${targetUrl}`);
+  console.log(`[OpenCodez Proxy] Method: ${req.method}`);
+  console.log(`[OpenCodez Proxy] Has body: ${!!req.body}`);
 
   try {
     const fetchOptions = {
@@ -40,12 +43,16 @@ router.use(async (req, res) => {
       },
     };
 
-    // Add body for POST/PUT/PATCH
+    // Add body for POST/PUT/PATCH — req.body is already parsed by express.json()
     if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
       fetchOptions.body = JSON.stringify(req.body);
+      console.log(`[OpenCodez Proxy] Body: ${JSON.stringify(req.body).substring(0, 200)}`);
     }
 
     const response = await fetch(targetUrl, fetchOptions);
+
+    console.log(`[OpenCodez Proxy] Response status: ${response.status}`);
+    console.log(`[OpenCodez Proxy] Response content-type: ${response.headers.get('content-type')}`);
 
     // Set status code
     res.status(response.status);
@@ -58,19 +65,18 @@ router.use(async (req, res) => {
 
     // Check if this is a streaming response (SSE)
     if (contentType && contentType.includes('text/event-stream')) {
-      // Stream the response
+      // Stream the response back
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      const encoder = new TextEncoder();
 
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          res.write(encoder.encode(decoder.decode(value, { stream: true })));
+          res.write(decoder.decode(value, { stream: true }));
         }
       } catch (streamErr) {
-        // Client disconnected
+        console.log('[OpenCodez Proxy] Stream ended (client disconnect)');
       } finally {
         res.end();
       }
