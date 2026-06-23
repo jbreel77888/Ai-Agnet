@@ -2,9 +2,14 @@
  * Tensorlake Code Interpreter — stateful sandbox execution for LibreChat.
  * ─────────────────────────────────────────────────────────────────────────────
  * Replaces LibreChat's built-in code interpreter with a persistent Tensorlake
- * MicroVM sandbox per session. Supports Python, JavaScript, and Bash.
+ * MicroVM sandbox per conversation. Supports Python, JavaScript, and Bash.
  *
  * Requires TENSORLAKE_API_KEY environment variable.
+ *
+ * Schema notes:
+ * - `language` is OPTIONAL (default: python). LLMs often omit it when the
+ *   request context makes the language obvious — marking it required causes
+ *   "Received tool input did not match expected schema" errors.
  */
 const { Tool } = require('@librechat/agents/langchain/tools');
 
@@ -14,18 +19,27 @@ const tensorlakeSchema = {
     language: {
       type: 'string',
       enum: ['python', 'javascript', 'bash'],
-      description: 'The programming language to execute',
-      default: 'python',
+      description:
+        'The programming language to execute. Defaults to "python" if omitted.',
     },
     code: {
       type: 'string',
-      description: 'The code to execute in the sandbox. Files persist across calls within the same conversation.',
+      description:
+        'The code to execute in the sandbox. Files persist across calls within the same conversation.',
     },
   },
-  required: ['language', 'code'],
+  required: ['code'],
 };
 
 class TensorlakeCodeInterpreter extends Tool {
+  static lc_name() {
+    return 'TensorlakeCodeInterpreter';
+  }
+
+  static get jsonSchema() {
+    return tensorlakeSchema;
+  }
+
   constructor(fields = {}) {
     super(fields);
     this.name = 'tensorlake_code_interpreter';
@@ -38,24 +52,21 @@ class TensorlakeCodeInterpreter extends Tool {
     this.envVar = 'TENSORLAKE_API_KEY';
 
     // Use process.env directly — more reliable than getEnvironmentVariable
-    // Also check fields (from plugin auth DB)
     this.apiKey = fields[this.envVar] || process.env[this.envVar] || fields.TENSORLAKE_API_KEY;
 
-    // Don't throw in constructor — lazy-load in _call
     if (!this.apiKey) {
-      console.warn('[TensorlakeCodeInterpreter] No API key found in fields or env, will try at runtime');
+      console.warn('[TensorlakeCodeInterpreter] No API key found in fields or env');
     }
 
-    // Cache sandboxes per conversation
+    // Cache sandboxes per conversation (conversationId -> { sandbox, createdAt })
     this.sandboxes = new Map();
+
+    // Bind _call so LangChain's internal validation calls the right `this`
+    this._call = this._call.bind(this);
   }
 
-  /**
-   * Get API key — try multiple sources
-   */
   getApiKey() {
     if (this.apiKey) return this.apiKey;
-    // Try process.env directly
     const key = process.env.TENSORLAKE_API_KEY;
     if (key) {
       this.apiKey = key;
@@ -66,26 +77,28 @@ class TensorlakeCodeInterpreter extends Tool {
 
   /**
    * Get or create a sandbox for the current conversation.
+   * Caches per conversationId so files persist across calls.
    */
   async getSandbox(conversationId) {
     if (!conversationId) {
       conversationId = 'default';
     }
 
-    // Check cache
+    // Reuse cached sandbox if still alive
     if (this.sandboxes.has(conversationId)) {
       const cached = this.sandboxes.get(conversationId);
       try {
         await cached.status();
         return cached;
-      } catch {
+      } catch (err) {
+        console.warn(`[Tensorlake] Cached sandbox dead, recreating: ${err.message}`);
         this.sandboxes.delete(conversationId);
       }
     }
 
-    // Create new sandbox
+    // Create new sandbox — use require() instead of dynamic import() for CJS compat
     const apiKey = this.getApiKey();
-    const { Sandbox } = await import('tensorlake');
+    const { Sandbox } = require('tensorlake');
     const sandbox = await Sandbox.create({
       apiKey,
       name: `lc-${conversationId.slice(0, 12)}`,
@@ -95,58 +108,105 @@ class TensorlakeCodeInterpreter extends Tool {
     });
 
     this.sandboxes.set(conversationId, sandbox);
-    console.log(`[Tensorlake] Created sandbox ${sandbox.sandboxId} for conversation ${conversationId}`);
+    console.log(`[Tensorlake] Created sandbox for conversation ${conversationId}`);
     return sandbox;
   }
 
-  async _call(input) {
-    const { language, code } = typeof input === 'string' ? JSON.parse(input) : input;
-
-    if (!code) {
-      return 'Error: code is required';
+  /**
+   * Normalize input — accepts string, object, or partial inputs.
+   */
+  parseInput(input) {
+    let obj = input;
+    if (typeof input === 'string') {
+      try {
+        obj = JSON.parse(input);
+      } catch {
+        // If not JSON, treat as raw python code
+        return { language: 'python', code: input };
+      }
+    }
+    if (!obj || typeof obj !== 'object') {
+      throw new Error('Input must be an object or JSON string');
     }
 
-    const conversationId = this.metadata?.conversationId || this.metadata?.sessionId || 'default';
+    // Accept either `code` or `script` (LLMs sometimes use one or the other)
+    const code = obj.code || obj.script || obj.source;
+    if (!code || typeof code !== 'string') {
+      throw new Error('Field "code" is required');
+    }
+
+    // Normalize language — default to python
+    let language = (obj.language || obj.lang || 'python').toLowerCase();
+    if (language === 'js' || language === 'node') language = 'javascript';
+    if (language === 'sh' || language === 'shell') language = 'bash';
+    if (!['python', 'javascript', 'bash'].includes(language)) {
+      language = 'python';
+    }
+
+    return { language, code };
+  }
+
+  async _call(input) {
+    let parsed;
+    try {
+      parsed = this.parseInput(input);
+    } catch (err) {
+      return `Error: ${err.message}`;
+    }
+    const { language, code } = parsed;
+
+    const conversationId =
+      this.metadata?.conversationId ||
+      this.metadata?.sessionId ||
+      this.metadata?.conversation_id ||
+      'default';
+
+    let sandbox;
+    try {
+      sandbox = await this.getSandbox(conversationId);
+    } catch (err) {
+      console.error('[TensorlakeCodeInterpreter] Sandbox create error:', err.message);
+      return `Error: failed to create sandbox — ${err.message}`;
+    }
+
+    const workDir = '/home/tl-user';
+
+    let filePath, command, cmdArgs;
+
+    switch (language) {
+      case 'python':
+        filePath = `${workDir}/_exec_${Date.now()}.py`;
+        await sandbox.writeFile(filePath, Buffer.from(code, 'utf-8'));
+        command = 'python3';
+        cmdArgs = [filePath];
+        break;
+      case 'javascript':
+        filePath = `${workDir}/_exec_${Date.now()}.js`;
+        await sandbox.writeFile(filePath, Buffer.from(code, 'utf-8'));
+        command = 'node';
+        cmdArgs = [filePath];
+        break;
+      case 'bash':
+        filePath = `${workDir}/_exec_${Date.now()}.sh`;
+        await sandbox.writeFile(filePath, Buffer.from(code, 'utf-8'));
+        command = 'bash';
+        cmdArgs = [filePath];
+        break;
+      default:
+        return `Error: Unsupported language "${language}". Use: python, javascript, or bash`;
+    }
 
     try {
-      const sandbox = await this.getSandbox(conversationId);
-      const workDir = '/home/tl-user';
-
-      let filePath, command, cmdArgs;
-
-      switch (language) {
-        case 'python':
-          filePath = `${workDir}/_exec_${Date.now()}.py`;
-          await sandbox.writeFile(filePath, Buffer.from(code, 'utf-8'));
-          command = 'python3';
-          cmdArgs = [filePath];
-          break;
-        case 'javascript':
-          filePath = `${workDir}/_exec_${Date.now()}.js`;
-          await sandbox.writeFile(filePath, Buffer.from(code, 'utf-8'));
-          command = 'node';
-          cmdArgs = [filePath];
-          break;
-        case 'bash':
-          filePath = `${workDir}/_exec_${Date.now()}.sh`;
-          await sandbox.writeFile(filePath, Buffer.from(code, 'utf-8'));
-          command = 'bash';
-          cmdArgs = [filePath];
-          break;
-        default:
-          return `Error: Unsupported language "${language}". Use: python, javascript, or bash`;
-      }
-
       const result = await sandbox.run(command, {
         args: cmdArgs,
-        workDir,
-        envs: { PYTHONUNBUFFERED: '1', NODE_ENV: 'development' },
-        timeoutMs: 60000,
+        workingDir: workDir,
+        env: { PYTHONUNBUFFERED: '1', NODE_ENV: 'development' },
+        timeout: 60,
       });
 
-      const stdout = (result).stdout || '';
-      const stderr = (result).stderr || '';
-      const exitCode = (result).exitCode ?? 0;
+      const stdout = result.stdout || '';
+      const stderr = result.stderr || '';
+      const exitCode = result.exitCode ?? 0;
 
       let output = '';
       if (stdout) {
@@ -163,20 +223,18 @@ class TensorlakeCodeInterpreter extends Tool {
         output += (output ? '\n' : '') + `Exit code: ${exitCode}`;
       }
 
-      // Check for generated files
+      // List generated files (skip our _exec_* temp files)
       try {
         const dirListing = await sandbox.listDirectory(workDir);
-        const entries = (dirListing).entries || (dirListing).files || dirListing;
+        const entries = dirListing.entries || dirListing.files || dirListing;
         if (Array.isArray(entries)) {
-          const newFiles = entries.filter(
-            (e) => {
-              const name = e.name || e.filename || '';
-              return !name.startsWith('_exec_') &&
-                ['png', 'jpg', 'csv', 'json', 'txt', 'html', 'svg'].includes(
-                  name.split('.').pop()?.toLowerCase() || ''
-                );
-            }
-          );
+          const newFiles = entries.filter((e) => {
+            const name = e.name || e.filename || '';
+            return !name.startsWith('_exec_') &&
+              ['png', 'jpg', 'jpeg', 'csv', 'json', 'txt', 'html', 'svg'].includes(
+                name.split('.').pop()?.toLowerCase() || '',
+              );
+          });
           if (newFiles.length > 0) {
             output += (output ? '\n\n' : '') + 'Generated files:\n';
             for (const f of newFiles) {
@@ -184,12 +242,14 @@ class TensorlakeCodeInterpreter extends Tool {
             }
           }
         }
-      } catch {}
+      } catch {
+        // ignore directory listing errors
+      }
 
       return output || '(no output)';
     } catch (err) {
-      console.error('[TensorlakeCodeInterpreter] Error:', err.message);
-      return `Error: ${err.message}`;
+      console.error('[TensorlakeCodeInterpreter] Run error:', err.message);
+      return `Error executing code: ${err.message}`;
     }
   }
 }
