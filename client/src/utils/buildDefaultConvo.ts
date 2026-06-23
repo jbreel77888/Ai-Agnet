@@ -79,19 +79,8 @@ const buildDefaultConvo = ({
     defaultConvo.agent_id = agentId;
   }
 
-  // ── Force Universal Agent for agents endpoint (Manus-style) ────────
-  // When using the agents endpoint, always use the Universal Agent.
-  // Don't use ephemeral agents — always the real Universal Agent.
-  if (isAgentsEndpoint(endpoint)) {
-    defaultConvo.agent_id = 'universal-agent';
-    // For agents endpoint, model = agent_id (not the LLM model name)
-    // LibreChat's agents controller uses model field as agent_id to look up the agent
-    defaultConvo.model = 'universal-agent';
-  }
-
-  // Note: do NOT call clearModelForNonEphemeralAgent here —
-  // it sets model=undefined which causes "missing_model" error.
-  // For agents endpoint, model must be the agent_id.
+  // Clear model for non-ephemeral agents - agents use their configured model internally
+  clearModelForNonEphemeralAgent(defaultConvo);
 
   defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
 

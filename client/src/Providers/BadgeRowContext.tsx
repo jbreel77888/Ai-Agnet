@@ -167,32 +167,21 @@ export default function BadgeRowProvider({
       }
 
       setEphemeralAgent((prev) => {
-        // ── Force-enable web_search only (Manus-style) ───────────────────
-        // web_search uses Tavily (built-in, works great)
-        // execute_code uses LibreChat's internal sandbox (/mnt/data/) — BROKEN, don't enable
-        // file_search — not needed for now
-        // tensorlake_code_interpreter is loaded from agent's tools list in DB
-        
-        const forcedDefaults: Record<string, boolean | string> = {
-          [Tools.web_search]: true,  // Always enable web search (Tavily)
-          ...initialValues,
-        };
-
         if (prev == null) {
-          const result: TEphemeralAgent = { ...forcedDefaults };
-          if (mcpOverrides) {
-            result.mcp = mcpOverrides;
+          /** ephemeralAgent is null — use localStorage defaults */
+          if (hasOverrides || mcpOverrides) {
+            const result: TEphemeralAgent = { ...initialValues };
+            if (mcpOverrides) {
+              result.mcp = mcpOverrides;
+            }
+            return result;
           }
-          return result;
+          return prev;
         }
-        
+        /** ephemeralAgent already has values (from prior state).
+         *  Only fill in undefined keys from localStorage. */
         let changed = false;
         const result = { ...prev };
-        // Force-enable web_search if not set or false
-        if (result[Tools.web_search] !== true) {
-          result[Tools.web_search] = true;
-          changed = true;
-        }
         for (const [toolKey, value] of Object.entries(initialValues)) {
           if (result[toolKey] === undefined) {
             result[toolKey] = value;

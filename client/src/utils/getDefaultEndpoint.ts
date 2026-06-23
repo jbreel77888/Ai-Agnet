@@ -55,13 +55,6 @@ const getDefaultEndpoint = ({
   convoSetup,
   endpointsConfig,
 }: TDefaultEndpoint): EModelEndpoint | undefined => {
-  // ── Force agents endpoint (Manus-style) ──────────────────────────────
-  // Always use the agents endpoint with the Universal Agent.
-  // Users never see or choose endpoints — like Manus AI.
-  if (endpointsConfig?.agents) {
-    return 'agents' as EModelEndpoint;
-  }
-
   return (
     getEndpointFromSetup(convoSetup, endpointsConfig) ||
     getEndpointFromLocalStorage(endpointsConfig) ||

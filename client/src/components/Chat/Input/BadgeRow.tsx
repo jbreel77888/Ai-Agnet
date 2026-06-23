@@ -371,8 +371,12 @@ function BadgeRow({
         )}
         {showEphemeralBadges === true && (
           <>
-            {/* All tools are auto-enabled — no toggle buttons shown.
-                Only MCP browser button (ToolsDropdown) is visible. */}
+            <WebSearch />
+            <CodeInterpreter />
+            <FileSearch />
+            <Skills />
+            <Artifacts />
+            <MCPSelect />
           </>
         )}
         {ghostBadge && (

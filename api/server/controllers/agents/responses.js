@@ -300,17 +300,12 @@ const createResponse = async (req, res) => {
   }
 
   const request = validation.request;
-  // ── Universal Agent auto-selection ──────────────────────────────────
-  let agentId = request.model;
+  const agentId = request.model;
   const isStreaming = request.stream === true;
   const summarizationConfig = appConfig?.summarization;
 
-  // Look up the agent — fall back to Universal Agent
-  let agent = await db.getAgent({ id: agentId });
-  if (!agent) {
-    agentId = 'universal-agent';
-    agent = await db.getAgent({ id: agentId });
-  }
+  // Look up the agent
+  const agent = await db.getAgent({ id: agentId });
   if (!agent) {
     return sendResponsesErrorResponse(
       res,
