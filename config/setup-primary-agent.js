@@ -34,7 +34,7 @@ createModels(mongoose);
 
 const db = require('~/models');
 
-const PRIMARY_AGENT_ID = 'primary-agent';
+const PRIMARY_AGENT_ID = 'agent_primary';
 const ADMIN_EMAIL = 'admin@agent-platform.local';
 const TEST_USER_EMAIL = 'tester@ai-norx.com';
 const TEST_USER_PASSWORD = 'Tester123!';
@@ -133,8 +133,20 @@ async function setupPrimaryAgent() {
   }
   console.log(`✓ Found admin user: ${adminUser.email} (${adminUser._id})`);
 
-  // Upsert primary agent
+  // Upsert primary agent (also migrate from legacy 'primary-agent' ID if present)
   console.log('Upserting primary-agent...');
+  // First: migrate legacy 'primary-agent' to 'agent_primary' if it exists
+  const Agent = mongoose.models.Agent;
+  await Agent.updateOne(
+    { id: 'primary-agent' },
+    { $set: { id: PRIMARY_AGENT_ID } },
+  );
+  // Also migrate conversations referencing the old ID
+  const Conv = mongoose.models.Conversation;
+  await Conv.updateMany(
+    { agent_id: 'primary-agent' },
+    { $set: { agent_id: PRIMARY_AGENT_ID, model: PRIMARY_AGENT_ID } },
+  );
   let agent = await db.getAgent({ id: PRIMARY_AGENT_ID });
   const agentData = {
     ...primaryAgentConfig,

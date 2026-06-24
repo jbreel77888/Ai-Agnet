@@ -18,7 +18,7 @@ const { getRoleByName, getAgent } = db;
  * The central agent that all USER-role conversations must use.
  * ADMIN can use any agent; USER can only use this one.
  */
-const PRIMARY_AGENT_ID = 'primary-agent';
+const PRIMARY_AGENT_ID = 'agent_primary';
 
 /**
  * Resolves custom agent ID (e.g., "agent_abc123") to a MongoDB document.

@@ -10,7 +10,7 @@
  */
 const { SystemRoles, isAgentsEndpoint } = require('librechat-data-provider');
 
-const PRIMARY_AGENT_ID = 'primary-agent';
+const PRIMARY_AGENT_ID = 'agent_primary';
 
 /**
  * Forces USER-role requests to use agents endpoint + primary-agent.

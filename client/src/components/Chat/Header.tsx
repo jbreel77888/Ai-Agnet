@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
+import { Bot } from 'lucide-react';
 import { getConfigDefaults, PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
@@ -55,7 +56,14 @@ function Header() {
                 !isSmallScreen ? 'transition-all duration-200 ease-in-out' : '',
               )}
             >
-              <ModelSelector startupConfig={startupConfig} />
+              {isAdmin ? (
+                <ModelSelector startupConfig={startupConfig} />
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-primary">
+                  <Bot className="h-4 w-4" />
+                  <span>Ai Norx</span>
+                </div>
+              )}
               {interfaceConfig.presets === true && interfaceConfig.modelSelect && isAdmin && <PresetsMenu />}
               {hasAccessToBookmarks === true && <BookmarkMenu />}
               {hasAccessToMultiConvo === true && <AddMultiConvo />}

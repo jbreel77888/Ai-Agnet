@@ -14,7 +14,7 @@ import { getLocalStorageItems } from './localStorage';
  * The central agent that all USER-role conversations must use.
  * ADMIN can use any agent; USER can only use this one.
  */
-const PRIMARY_AGENT_ID = 'primary-agent';
+const PRIMARY_AGENT_ID = 'agent_primary';
 
 const buildDefaultConvo = ({
   models,
