@@ -169,19 +169,23 @@ async function setupPrimaryAgent() {
 
   if (adminRole && userRole) {
     // Permission bits: 1=USE, 2=CREATE/EDIT, 4=UPDATE, 8=DELETE, 16=SHARE
-    // ADMIN — full access (all bits)
+    // IMPORTANT: For PrincipalType.ROLE, principalId must be the role NAME string
+    // (e.g., 'ADMIN', 'USER'), NOT the role's _id (ObjectId).
+    // This matches how getUserPrincipals() builds the principal list.
+
+    // ADMIN — full access (all bits, max=15: USE+EDIT+UPDATE+DELETE)
     try {
       await db.grantPermission(
         PrincipalType.ROLE,
-        adminRole._id,
+        SystemRoles.ADMIN,  // role NAME string, not _id
         ResourceType.AGENT,
         agent._id,
-        31, // USE+EDIT+UPDATE+DELETE+SHARE
+        15, // USE+EDIT+UPDATE+DELETE (max value allowed by schema)
         adminUser._id,
         null,
         adminRole._id,
       );
-      console.log('  ✓ ADMIN role: full access (all permission bits)');
+      console.log('  ✓ ADMIN role: full access (USE+EDIT+UPDATE+DELETE)');
     } catch (err) {
       console.error('  ✗ ADMIN grant failed:', err.message);
     }
@@ -190,7 +194,7 @@ async function setupPrimaryAgent() {
     try {
       await db.grantPermission(
         PrincipalType.ROLE,
-        userRole._id,
+        SystemRoles.USER,  // role NAME string, not _id
         ResourceType.AGENT,
         agent._id,
         1, // USE only
