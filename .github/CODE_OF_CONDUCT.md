@@ -59,8 +59,8 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement here on GitHub or
-on the official [Discord Server](https://discord.librechat.ai). 
+reported to the community leaders responsible for enforcement by opening a
+private GitHub security advisory or contacting the maintainers directly.
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the

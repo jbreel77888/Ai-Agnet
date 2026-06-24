@@ -1,7 +1,7 @@
 {
-  "name": "LibreChat",
+  "name": "ai-norx",
   "version": "v0.8.7-rc1",
-  "description": "",
+  "description": "Ai Norx — منصة وكيل ذكي مركزية",
   "packageManager": "npm@11.13.0",
   "workspaces": [
     "api",
@@ -112,14 +112,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/jbreel77888/Ai-Agnet.git"
   },
-  "author": "",
+  "author": "Ai Norx",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/jbreel77888/Ai-Agnet/issues"
   },
-  "homepage": "https://librechat.ai/",
+  "homepage": "https://agent-platform-production-de14.up.railway.app",
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",

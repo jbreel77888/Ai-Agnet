@@ -1,7 +1,7 @@
 {
-  "name": "@librechat/frontend",
+  "name": "@ai-norx/frontend",
   "version": "v0.8.7-rc1",
-  "description": "",
+  "description": "Ai Norx — Frontend",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",

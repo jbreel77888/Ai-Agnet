@@ -92,7 +92,7 @@ function runTurboBuild() {
   const args = ['npx', 'turbo', 'run', 'build'];
 
   if (flags.skipClient) {
-    args.push('--filter=!@librechat/frontend');
+    args.push('--filter=!@ai-norx/frontend');
   }
   if (flags.force) {
     args.push('--force');
