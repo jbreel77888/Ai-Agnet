@@ -24,12 +24,34 @@ registration:
 
 fileStrategy: local
 
+# Web Search Configuration (used by the `web_search` capability/tool)
+# This is the proper way to enable web search — Tavily as both the
+# search provider AND the content scraper. The `web_search` tool
+# (loaded from Tools.web_search) uses this config to construct a
+# structured search tool with reranking, scraping, and highlights.
+# Do NOT add `tavily_search_results_json` directly to an agent's
+# tools list — that's a raw fallback that returns JSON to the LLM
+# and tends to fire on every message.
+webSearch:
+  searchProvider: tavily
+  scraperProvider: tavily
+  tavilyApiKey: '${TAVILY_API_KEY}'
+  tavilySearchOptions:
+    searchDepth: basic
+    maxResults: 5
+    topic: general
+  # Reranker: Jina (we have JINA_API_KEY set). Reranking improves
+  # result quality by re-ordering search hits by relevance.
+  rerankerType: jina
+  jinaApiKey: '${JINA_API_KEY}'
+
 endpoints:
   agents:
     disableBuilder: false
     recursionLimit: 50
     capabilities:
       - tools
+      - web_search
       - file_search
       - artifacts
       - context
