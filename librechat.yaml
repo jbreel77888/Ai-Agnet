@@ -48,6 +48,59 @@ webSearch:
   #   jinaApiKey: '${JINA_API_KEY}'
   rerankerType: none
 
+# ============================================================================
+# MCP Servers — Model Context Protocol
+# ============================================================================
+# These extend the agent with structured tools for filesystem operations,
+# URL fetching, and GitHub API access. Each server runs as a subprocess
+# (stdio type) via npx, downloading the package on first use.
+#
+# Tool naming in LibreChat:
+#   sys__all__sys_mcp_<serverName>  →  all tools from this server
+#   <toolName>_mcp_<serverName>    →  one specific tool
+#
+# The agent_primary has these servers enabled via:
+#   sys__all__sys_mcp_github
+#   sys__all__sys_mcp_fetch
+#   sys__all__sys_mcp_filesystem
+mcpServers:
+  # GitHub MCP Server — repo management, PRs, issues, file contents
+  # Uses GITHUB_PERSONAL_ACCESS_TOKEN env var (set on Railway)
+  github:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - '@modelcontextprotocol/server-github'
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: '${GITHUB_PERSONAL_ACCESS_TOKEN}'
+    timeout: 60000
+
+  # Fetch MCP Server — fetches URLs and converts to markdown
+  # Useful for reading web pages, API docs, etc.
+  # No auth required — just HTTP fetch
+  fetch:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - '@modelcontextprotocol/server-fetch'
+    timeout: 30000
+
+  # Filesystem MCP Server — read/write/list files in the agent workspace
+  # Exposes /app/uploads/agent-workspace/ (created in Dockerfile)
+  # This is persistent storage across conversations — unlike Tensorlake
+  # sandbox which is per-conversation. Use for reports, generated files,
+  # intermediate results that should survive across sessions.
+  filesystem:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - '@modelcontextprotocol/server-filesystem'
+      - /app/uploads/agent-workspace
+    timeout: 30000
+
 endpoints:
   agents:
     disableBuilder: false

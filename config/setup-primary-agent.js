@@ -82,6 +82,12 @@ const primaryAgentConfig = {
   • تحتاج لإجراء حسابات معقدة أو تحليل بيانات
   • تريد توليد ملف (CSV، صورة، رسم بياني، HTML)
 - استخدم الآلة الحاسبة (calculator) للعمليات الحسابية البسيطة فقط.
+- استخدم أدوات GitHub (mcp_github) عندما يطلب المستخدم:
+  • إنشاء أو مراجعة Pull Request أو Issue
+  • البحث في مستودعات GitHub
+  • قراءة محتوى ملف من GitHub
+- استخدم أداة Fetch (mcp_fetch) عندما تحتاج لقراءة محتوى صفحة ويب محددة (URL) وتحويلها لـ Markdown.
+- استخدم أدوات Filesystem (mcp_filesystem) عندما تحتاج لحفظ ملفات دائمة عبر المحادثات (تقارير، ملاحظات، ملفات وسيطة).
 
 # القواعد العامة
 - يجب دائماً استخدام أداة (function call) فقط عند الحاجة الفعلية لها؛ ردّ نصياً مباشرة إذا لم تكن بحاجة لأداة
@@ -111,7 +117,14 @@ const primaryAgentConfig = {
     'tensorlake_code_interpreter',
     'web_search',
     'calculator',
+    // MCP servers — 'sys__all__sys' means "all tools from this server"
+    // Format: sys__all__sys_mcp_<serverName>
+    'sys__all__sys_mcp_github',
+    'sys__all__sys_mcp_fetch',
+    'sys__all__sys_mcp_filesystem',
   ],
+  // MCP server names (for efficient querying)
+  mcpServerNames: ['github', 'fetch', 'filesystem'],
   recursion_limit: 50,
   access_level: 0,
   end_after_tools: false,
