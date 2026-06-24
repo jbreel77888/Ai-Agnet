@@ -40,10 +40,13 @@ webSearch:
     searchDepth: basic
     maxResults: 5
     topic: general
-  # Reranker: Jina (we have JINA_API_KEY set). Reranking improves
-  # result quality by re-ordering search hits by relevance.
-  rerankerType: jina
-  jinaApiKey: '${JINA_API_KEY}'
+  # Reranker: disabled ('none') — Jina's free tier rate-limits too
+  # aggressively (429 errors on every search). Tavily's default
+  # ranking is already good enough for most queries.
+  # To re-enable Jina reranking later, set:
+  #   rerankerType: jina
+  #   jinaApiKey: '${JINA_API_KEY}'
+  rerankerType: none
 
 endpoints:
   agents:
