@@ -9,6 +9,7 @@ import type {
 } from 'librechat-data-provider';
 import { getDefaultEndpoint, buildDefaultConvo } from '~/utils';
 import { useGetEndpointsQuery } from '~/data-provider';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 type TDefaultConvo = {
   conversation: Partial<TConversation>;
@@ -22,12 +23,15 @@ const exceptions = new Set(['spec', 'iconURL']);
 const useDefaultConvo = () => {
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const { data: modelsConfig = {} as TModelsConfig } = useGetModelsQuery();
+  const { user } = useAuthContext();
+  const userRole = user?.role;
 
   const getDefaultConversation = useCallback(
     ({ conversation: _convo, preset, cleanInput, cleanOutput }: TDefaultConvo) => {
       const endpoint = getDefaultEndpoint({
         convoSetup: preset as TPreset,
         endpointsConfig,
+        userRole,
       });
 
       const models = modelsConfig[endpoint ?? ''] || [];
@@ -52,6 +56,7 @@ const useDefaultConvo = () => {
         lastConversationSetup: preset as TConversation,
         models,
         defaultParamsEndpoint,
+        userRole,
       });
 
       if (!cleanOutput) {
@@ -70,7 +75,7 @@ const useDefaultConvo = () => {
 
       return defaultConvo;
     },
-    [endpointsConfig, modelsConfig],
+    [endpointsConfig, modelsConfig, userRole],
   );
 
   return getDefaultConversation;

@@ -24,6 +24,7 @@ import {
 } from '~/utils';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
 import { startupConfigKey } from '~/data-provider';
+import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
@@ -33,6 +34,8 @@ const useNavigateToConvo = (index = 0) => {
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const { hasSetConversation, setConversation: setConvo } = store.useCreateConversationAtom(index);
+  const { user } = useAuthContext();
+  const userRole = user?.role;
 
   const setConversation = useCallback(
     (conversation: TConversation) => {
@@ -98,6 +101,7 @@ const useNavigateToConvo = (index = 0) => {
       const defaultEndpoint = getDefaultEndpoint({
         convoSetup: conversation,
         endpointsConfig,
+        userRole,
       });
 
       const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
@@ -114,6 +118,7 @@ const useNavigateToConvo = (index = 0) => {
         endpoint: defaultEndpoint,
         lastConversationSetup: conversation,
         defaultParamsEndpoint,
+        userRole,
       });
     }
     clearAllConversations(true);

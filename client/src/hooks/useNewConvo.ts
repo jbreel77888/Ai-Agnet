@@ -40,7 +40,7 @@ import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
 import { usePauseGlobalAudio } from './Audio';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useAuthContext } from '~/hooks';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
@@ -61,6 +61,9 @@ const useNewConvo = (index = 0) => {
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
   });
+
+  const { user } = useAuthContext();
+  const userRole = user?.role;
 
   const modelsQuery = useGetModelsQuery();
   const assistantsListMap = useAssistantListMap();
@@ -118,6 +121,7 @@ const useNewConvo = (index = 0) => {
           let defaultEndpoint = getDefaultEndpoint({
             convoSetup: activePreset ?? conversation,
             endpointsConfig,
+            userRole,
           });
 
           // If the selected endpoint is agents but user doesn't have access, find an alternative
@@ -205,6 +209,7 @@ const useNewConvo = (index = 0) => {
             endpoint: defaultEndpoint,
             models,
             defaultParamsEndpoint,
+            userRole,
           });
 
           if (hasExplicitChatProjectId) {

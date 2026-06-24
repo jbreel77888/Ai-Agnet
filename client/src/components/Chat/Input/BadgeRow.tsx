@@ -10,12 +10,13 @@ import React, {
 } from 'react';
 import { Badge } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
+import { SystemRoles } from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import CodeInterpreter from './CodeInterpreter';
 import { BadgeRowProvider } from '~/Providers';
 import ToolsDropdown from './ToolsDropdown';
 import type { BadgeItem } from '~/common';
-import { useChatBadges } from '~/hooks';
+import { useChatBadges, useAuthContext } from '~/hooks';
 import ToolDialogs from './ToolDialogs';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
@@ -166,6 +167,8 @@ function BadgeRow({
 
   const allBadges = useChatBadges();
   const isEditing = useRecoilValue(store.isEditingBadges);
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
 
   const badges = useMemo(
     () => allBadges.filter((badge) => badge.isAvailable !== false),
@@ -329,7 +332,7 @@ function BadgeRow({
       isSubmitting={isSubmitting}
     >
       <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
-        {showEphemeralBadges === true && <ToolsDropdown />}
+        {showEphemeralBadges === true && isAdmin && <ToolsDropdown />}
         {tempBadges.map((badge, index) => (
           <React.Fragment key={badge.id}>
             {dragState.draggedBadge && dragState.insertIndex === index && ghostBadge && (
@@ -369,7 +372,7 @@ function BadgeRow({
             />
           </div>
         )}
-        {showEphemeralBadges === true && (
+        {showEphemeralBadges === true && isAdmin && (
           <>
             <WebSearch />
             <CodeInterpreter />

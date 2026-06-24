@@ -15,6 +15,12 @@ const db = require('~/models');
 const { getRoleByName, getAgent } = db;
 
 /**
+ * The central agent that all USER-role conversations must use.
+ * ADMIN can use any agent; USER can only use this one.
+ */
+const PRIMARY_AGENT_ID = 'primary-agent';
+
+/**
  * Resolves custom agent ID (e.g., "agent_abc123") to a MongoDB document.
  * @param {string} agentCustomId - Custom agent ID from request body
  * @returns {Promise<Object|null>} Agent document with _id field, or null if ephemeral/not found
@@ -159,6 +165,22 @@ const canAccessAgentFromBody = (options) => {
     try {
       const { endpoint, agent_id } = req.body;
       let agentId = agent_id;
+
+      // ── Central-agent policy ─────────────────────────────────────────
+      // USER role must always use the primary-agent on the agents endpoint.
+      // ADMIN role is unaffected and can use any agent / any endpoint.
+      if (req.user?.role === SystemRoles.USER) {
+        if (!isAgentsEndpoint(endpoint)) {
+          return res.status(403).json({
+            error: 'Forbidden',
+            message: 'Users can only use the agents endpoint.',
+          });
+        }
+        // Force primary-agent
+        agentId = PRIMARY_AGENT_ID;
+        req.body.agent_id = PRIMARY_AGENT_ID;
+        req.body.model = PRIMARY_AGENT_ID;
+      }
 
       if (!isAgentsEndpoint(endpoint)) {
         agentId = Constants.EPHEMERAL_AGENT_ID;

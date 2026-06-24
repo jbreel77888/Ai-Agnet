@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
-import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { getConfigDefaults, PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
@@ -9,7 +9,7 @@ import { OpenSidebar, PresetsMenu } from './Menus';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -39,6 +39,8 @@ function Header() {
     permission: Permissions.USE,
   });
 
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   return (
@@ -54,7 +56,7 @@ function Header() {
               )}
             >
               <ModelSelector startupConfig={startupConfig} />
-              {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
+              {interfaceConfig.presets === true && interfaceConfig.modelSelect && isAdmin && <PresetsMenu />}
               {hasAccessToBookmarks === true && <BookmarkMenu />}
               {hasAccessToMultiConvo === true && <AddMultiConvo />}
               {isSmallScreen && (

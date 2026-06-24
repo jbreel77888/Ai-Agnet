@@ -4,12 +4,18 @@ import type {
   EModelEndpoint,
   TEndpointsConfig,
 } from 'librechat-data-provider';
+import { SystemRoles } from 'librechat-data-provider';
 import { getLocalStorageItems } from './localStorage';
 import { mapEndpoints } from './endpoints';
 
 type TConvoSetup = Partial<TPreset> | Partial<TConversation>;
 
-type TDefaultEndpoint = { convoSetup: TConvoSetup; endpointsConfig: TEndpointsConfig };
+type TDefaultEndpoint = {
+  convoSetup: TConvoSetup;
+  endpointsConfig: TEndpointsConfig;
+  /** Optional: role of the current user. When USER, forces 'agents' endpoint. */
+  userRole?: string;
+};
 
 const getEndpointFromSetup = (
   convoSetup: TConvoSetup | null,
@@ -54,7 +60,14 @@ const getDefinedEndpoint = (endpointsConfig: TEndpointsConfig) => {
 const getDefaultEndpoint = ({
   convoSetup,
   endpointsConfig,
+  userRole,
 }: TDefaultEndpoint): EModelEndpoint | undefined => {
+  // ── Central-agent policy ───────────────────────────────────────────
+  // USER role can only use the 'agents' endpoint.
+  if (userRole === SystemRoles.USER && endpointsConfig?.agents) {
+    return 'agents' as EModelEndpoint;
+  }
+
   return (
     getEndpointFromSetup(convoSetup, endpointsConfig) ||
     getEndpointFromLocalStorage(endpointsConfig) ||

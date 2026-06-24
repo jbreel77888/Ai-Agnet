@@ -10,6 +10,7 @@ import {
 import type { TEndpointsConfig, EModelEndpoint, TConversation } from 'librechat-data-provider';
 import type { AssistantListItem, NewConversationParams } from '~/common';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mainTextareaId } from '~/common';
@@ -27,6 +28,8 @@ export default function useAddedResponse() {
   const assistantsListMap = useAssistantListMap();
   const rootConvo = useRecoilValue(store.conversationByKeySelector(0));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const { user } = useAuthContext();
+  const userRole = user?.role;
   const { conversation, setConversation } = store.useCreateConversationAtom(ADDED_INDEX);
 
   /**
@@ -50,6 +53,7 @@ export default function useAddedResponse() {
       const defaultEndpoint = getDefaultEndpoint({
         convoSetup: activePreset,
         endpointsConfig,
+        userRole,
       });
 
       const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
@@ -96,6 +100,7 @@ export default function useAddedResponse() {
         endpoint: defaultEndpoint ?? ('' as EModelEndpoint),
         models,
         defaultParamsEndpoint,
+        userRole,
       });
 
       if (preset?.title != null && preset.title !== '') {
