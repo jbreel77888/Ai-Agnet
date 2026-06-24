@@ -77,14 +77,14 @@ mcpServers:
     timeout: 60000
 
   # Fetch MCP Server — fetches URLs and converts to markdown
-  # Useful for reading web pages, API docs, etc.
-  # No auth required — just HTTP fetch
+  # Uses the official Python-based server via uvx (uv tool runner).
+  # uv/uvx is installed in the Docker image (Alpine + astral-sh/uv).
+  # Useful for reading web pages, API docs, RSS feeds.
   fetch:
     type: stdio
-    command: npx
+    command: uvx
     args:
-      - -y
-      - '@modelcontextprotocol/server-fetch'
+      - mcp-server-fetch
     timeout: 30000
 
   # Filesystem MCP Server — read/write/list files in the agent workspace
