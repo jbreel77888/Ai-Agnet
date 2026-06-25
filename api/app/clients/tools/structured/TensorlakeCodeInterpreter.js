@@ -48,13 +48,20 @@ class TensorlakeCodeInterpreter extends Tool {
       'FULL LINUX SANDBOX (Ubuntu systemd, persistent) — your gateway to a real Linux machine. ' +
       'NOT just Python. Use the "code" field with language="python" | "javascript" | "bash". ' +
       '\n\n' +
-      'Use language="bash" for ALL shell tasks: apt-get install, pip install, npm install, curl, wget, git, ' +
-      'ffmpeg, imagemagick, jq, tar, sqlite3, ssh, nginx, building/running apps, downloading files, ' +
-      'calling APIs, scraping, automation, ETL pipelines, system administration. ' +
+      'CRITICAL PATH RULE: This sandbox is a SEPARATE MACHINE from the chat server. ' +
+      'All file paths MUST be inside /home/tl-user/ (the sandbox home directory). ' +
+      'FORBIDDEN paths that DO NOT EXIST in the sandbox: /app/uploads/*, /app/*, /uploads/*, /api/*. ' +
+      'If you write to any path outside /home/tl-user/ the operation will fail with FileNotFoundError. ' +
+      'Always use absolute paths like /home/tl-user/myfile.txt, /home/tl-user/output/, /home/tl-user/data.csv. ' +
       '\n\n' +
-      'Use language="python" for Python scripts (pandas, numpy, matplotlib, requests, beautifulsoup, etc.). ' +
-      'Use language="javascript" for Node.js scripts. ' +
-      '\n\n' +
+      'WHEN TO USE WHICH LANGUAGE:\n' +
+      '- language="bash" (DEFAULT for system tasks): file creation (touch, echo >), apt-get install, pip install, ' +
+      'npm install, curl, wget, git, ffmpeg, imagemagick, jq, tar, sqlite3, building/running apps, downloading ' +
+      'files, calling APIs, scraping, automation, ETL pipelines. For simple file writes use: ' +
+      '  echo "content" > /home/tl-user/file.txt  (NOT a Python script!)\n' +
+      '- language="python": data analysis (pandas, numpy), plotting (matplotlib), complex logic, scraping with BS4\n' +
+      '- language="javascript": Node.js scripts (Express servers, npm packages)\n' +
+      '\n' +
       'The sandbox is PERSISTENT: files, installed packages, and data survive across calls within the same conversation. ' +
       'Working directory: /home/tl-user. You can install any package, run any command, access the internet, ' +
       'build and run websites/apps/databases, process images/video, generate any file type. ' +
@@ -184,16 +191,49 @@ class TensorlakeCodeInterpreter extends Tool {
       if (stderr) output += (output ? '\n' : '') + 'STDERR:\n' + (stderr.length > 4000 ? stderr.substring(0, 4000) + '\n... [truncated]' : stderr);
       if (exitCode !== 0) output += (output ? '\n' : '') + `Exit code: ${exitCode}`;
 
+      // ── Smart error hint: detect forbidden paths and redirect agent ──
+      // If stderr mentions /app/, /uploads/, or FileNotFoundError on a
+      // forbidden path, append a strong hint telling the agent to use
+      // /home/tl-user/ instead. This trains the LLM in-context.
+      const stderrLower = (stderr || '').toLowerCase();
+      const hasForbiddenPath = /\/app\/|\/uploads\/|\/api\//.test(stderr) ||
+                               /\/app\/|\/uploads\/|\/api\//.test(stdout);
+      const hasFileNotFound = stderrLower.includes('filenotfounderror') ||
+                              stderrLower.includes('no such file or directory');
+      if (hasForbiddenPath || hasFileNotFound) {
+        output += '\n\n⚠️ HINT: The sandbox is a SEPARATE Linux machine from the chat server. ' +
+                  'Paths like /app/uploads/, /app/*, /uploads/*, /api/* DO NOT EXIST in the sandbox. ' +
+                  'ALL files must be inside /home/tl-user/ (the sandbox home directory). ' +
+                  'For simple file writes, prefer bash:  echo "content" > /home/tl-user/file.txt  ' +
+                  'instead of writing a Python script that opens() a file. ' +
+                  'Retry the operation using /home/tl-user/ as the base path.';
+      }
+
+      // ── Detect Python used for trivial shell tasks (anti-pattern) ──
+      // If the code was Python but is clearly a simple file write/read,
+      // suggest using bash next time.
+      if (language === 'python' && exitCode !== 0) {
+        const looksLikeFileWrite = /\bopen\s*\([^)]*['"][wx]/.test(code);
+        const looksLikeSimpleScript = code.split('\n').length < 10 &&
+                                      (code.includes('with open(') || code.includes('os.makedirs'));
+        if (looksLikeFileWrite || looksLikeSimpleScript) {
+          output += '\n\n💡 TIP: For simple file operations (create, write, mkdir), ' +
+                    'use language="bash" instead of Python — it is faster and more reliable. ' +
+                    'Example:  echo "content" > /home/tl-user/file.txt  or  mkdir -p /home/tl-user/output';
+        }
+      }
+
       try {
         const dirListing = await sandbox.listDirectory(workDir);
         const entries = dirListing.entries || dirListing.files || dirListing;
         if (Array.isArray(entries)) {
           const newFiles = entries.filter((e) => {
             const name = e.name || e.filename || '';
-            return !name.startsWith('_exec_') && ['png','jpg','jpeg','csv','json','txt','html','svg'].includes(name.split('.').pop()?.toLowerCase() || '');
+            return !name.startsWith('_exec_') && !name.startsWith('.') &&
+                   ['png','jpg','jpeg','csv','json','txt','html','svg','md','pdf','xlsx','js','py','sh'].includes(name.split('.').pop()?.toLowerCase() || '');
           });
           if (newFiles.length > 0) {
-            output += (output ? '\n\n' : '') + 'Generated files:\n';
+            output += (output ? '\n\n' : '') + 'Current files in /home/tl-user:\n';
             for (const f of newFiles) output += `  - ${f.name || f.filename} (${f.size || 0} bytes)\n`;
           }
         }

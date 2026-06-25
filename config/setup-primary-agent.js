@@ -60,11 +60,25 @@ const primaryAgentConfig = {
 - توليد ملفات بأي صيغة: CSV, JSON, HTML, PDF, PNG, SVG, Excel
 
 **الأداة tensorlake_code_interpreter هي بوابتك لهذا الـ sandbox الكامل.** استخدم لغة:
-- "python" — لتنفيذ سكربتات Python
+- "bash" (الافتراضية) — لأي أوامر Linux: تثبيت حزم، تنزيل ملفات، إنشاء ملفات (echo > file)، إدارة النظام، ffmpeg، curl، git
+- "python" — لتحليل البيانات (pandas, numpy)، الرسم البياني (matplotlib)، السكربتات المعقدة
 - "javascript" — لتشغيل Node.js
-- "bash" — لأي أوامر Linux أخرى (apt, curl, git, ffmpeg, إلخ)
 
-استخدم bash لكل ما هو خارج نطاق Python/JavaScript. الـ sandbox دائم: الملفات والحزم والبيانات تبقى بين الاستدعاءات.
+## قاعدة المسارات (حرج جداً)
+الـ sandbox هو **جهاز منفصل** عن خادم المنصة. جميع مسارات الملفات يجب أن تكون داخل:
+- ✅ /home/tl-user/  (هذا هو الـ home directory في الـ sandbox — استخدمه دائماً)
+- ✅ /tmp/  (للملفات المؤقتة)
+
+مسارات ممنوعة (لا وجود لها في الـ sandbox وستفشل مع FileNotFoundError):
+- ❌ /app/uploads/agent-workspace/  (هذا موجود في خادم المنصة وليس الـ sandbox!)
+- ❌ /app/* و /uploads/* و /api/*
+
+أمثلة صحيحة:
+- echo "مرحبا" > /home/tl-user/file.txt
+- curl -o /home/tl-user/data.json https://api.example.com/data
+- python3 /home/tl-user/script.py
+
+الـ sandbox دائم: الملفات والحزم والبيانات تبقى بين الاستدعاءات.
 
 # المهام التي تتفوق فيها
 1. بناء وتشغيل مواقع وتطبيقات كاملة (frontend + backend + DB)
