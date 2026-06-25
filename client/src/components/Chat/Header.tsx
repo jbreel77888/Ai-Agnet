@@ -18,7 +18,7 @@ function WorkspaceButton() {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<{ name: string; size: number }[]>([]);
   const [loading, setLoading] = useState(false);
-  const conversationId = useRecoilValue(store.conversationId);
+  const conversationId = useRecoilValue(store.conversationIdByIndex(0));
 
   const fetchFiles = useCallback(async () => {
     if (!conversationId) {
