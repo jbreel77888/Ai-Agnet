@@ -22,11 +22,11 @@ const tensorlakeSchema = {
     language: {
       type: 'string',
       enum: ['python', 'javascript', 'bash'],
-      description: 'Programming language. Default: python.',
+      description: 'Execution language. "python" for Python scripts, "javascript" for Node.js, "bash" for ANY shell command (apt, curl, git, ffmpeg, etc.). Default: python.',
     },
     code: {
       type: 'string',
-      description: 'REQUIRED. The code to execute. Write COMPLETE runnable code.',
+      description: 'REQUIRED. The code or shell commands to execute. For bash, you can chain commands with && and use any Linux tool. Write COMPLETE runnable code.',
     },
   },
   required: ['code'],
@@ -45,13 +45,20 @@ class TensorlakeCodeInterpreter extends Tool {
     super(fields);
     this.name = 'tensorlake_code_interpreter';
     this.description =
-      'YOUR PRIMARY TOOL — Use this for EVERY task that requires execution. ' +
-      'Pass code in the "code" field (NOT cmd/shell/command). ' +
-      'Supports: language="python" (default), language="javascript", language="bash". ' +
-      'Persistent Linux sandbox — files, packages, and data survive across calls. ' +
-      'Use for: writing code, running scripts, calculations, data analysis, ' +
-      'generating files (CSV, JSON, HTML, images, charts), installing packages, ' +
-      'building websites/apps, automating tasks. Working dir: /home/tl-user.';
+      'FULL LINUX SANDBOX (Ubuntu systemd, persistent) — your gateway to a real Linux machine. ' +
+      'NOT just Python. Use the "code" field with language="python" | "javascript" | "bash". ' +
+      '\n\n' +
+      'Use language="bash" for ALL shell tasks: apt-get install, pip install, npm install, curl, wget, git, ' +
+      'ffmpeg, imagemagick, jq, tar, sqlite3, ssh, nginx, building/running apps, downloading files, ' +
+      'calling APIs, scraping, automation, ETL pipelines, system administration. ' +
+      '\n\n' +
+      'Use language="python" for Python scripts (pandas, numpy, matplotlib, requests, beautifulsoup, etc.). ' +
+      'Use language="javascript" for Node.js scripts. ' +
+      '\n\n' +
+      'The sandbox is PERSISTENT: files, installed packages, and data survive across calls within the same conversation. ' +
+      'Working directory: /home/tl-user. You can install any package, run any command, access the internet, ' +
+      'build and run websites/apps/databases, process images/video, generate any file type. ' +
+      'Treat this as a full Linux server, not a code executor.';
     this.schema = tensorlakeSchema;
     this.envVar = 'TENSORLAKE_API_KEY';
     this.apiKey = fields[this.envVar] || process.env[this.envVar] || fields.TENSORLAKE_API_KEY;

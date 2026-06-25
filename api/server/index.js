@@ -251,6 +251,18 @@ const startServer = async () => {
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders();
+        // Send an immediate heartbeat comment so the client knows the
+        // connection is alive (prevents the UI from appearing "hung"
+        // while the upstream is still warming up).
+        res.write(': heartbeat\n\n');
+        if (typeof res.flush === 'function') { res.flush(); }
+        // Periodic heartbeat every 10s while streaming
+        const heartbeatTimer = setInterval(() => {
+          try {
+            res.write(': heartbeat\n\n');
+            if (typeof res.flush === 'function') { res.flush(); }
+          } catch (e) { /* connection closed */ }
+        }, 10000);
         const reader = proxyResponse.body.getReader();
         const decoder = new TextDecoder();
         try {
@@ -263,6 +275,7 @@ const startServer = async () => {
         } catch (e) {
           console.log('[OpenCodez Proxy] Stream ended');
         }
+        clearInterval(heartbeatTimer);
         res.end();
       } else {
         res.setHeader('Content-Type', contentType);

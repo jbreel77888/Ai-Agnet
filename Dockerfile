@@ -60,6 +60,23 @@ RUN \
     npm prune --production; \
     npm cache clean --force
 
+# ── Pre-install MCP server packages ──────────────────────────────────────
+# Without this, the first conversation triggers `npx -y @modelcontextprotocol/server-*`
+# which downloads packages from npm at runtime — taking 20-40s on Railway cold
+# starts and making the UI appear hung until all 3 MCP servers are ready.
+# Pre-installing them as global packages makes `npx` find them instantly.
+# Note: must run as root (USER node can't write to /usr/local/lib).
+USER root
+RUN npm install -g --no-save \
+      @modelcontextprotocol/server-github@latest \
+      @modelcontextprotocol/server-filesystem@latest \
+    && npm cache clean --force
+# Pre-cache the uvx-based fetch server (downloads wheel to uv cache)
+RUN uvx --version >/dev/null 2>&1 && \
+    (uv tool install mcp-server-fetch || true) && \
+    (uv cache clean || true)
+USER node
+
 # Optional build metadata surfaced in Settings -> About for support triage.
 # Declared here (after the heavy install/build steps) so that commit/date
 # changing on every CI run does not bust the cache for dependency install
