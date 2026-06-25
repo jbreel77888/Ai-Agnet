@@ -1,7 +1,7 @@
-import { memo, useMemo, useState, useCallback } from 'react';
+import { memo, useMemo, useState, useCallback, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
-import { Bot, FolderOpen } from 'lucide-react';
+import { Bot, FolderOpen, AlertCircle, X } from 'lucide-react';
 import { getConfigDefaults, PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
@@ -14,20 +14,109 @@ import { useHasAccess, useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
+// ── Sandbox Session Check ───────────────────────────────────────────────
+function SandboxSessionCheck() {
+  const [showAlert, setShowAlert] = useState(false);
+  const [sandboxInfo, setSandboxInfo] = useState<{ sandboxId: string; status: string } | null>(null);
+  const [terminating, setTerminating] = useState(false);
+
+  useEffect(() => {
+    const checkSandbox = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/sandbox/status', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.active) {
+          setSandboxInfo({ sandboxId: data.sandboxId, status: data.status || 'running' });
+          setShowAlert(true);
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+    // Check after a short delay to let the page load
+    const timer = setTimeout(checkSandbox, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleTerminate = async () => {
+    setTerminating(true);
+    try {
+      const token = localStorage.getItem('token');
+      await fetch('/api/sandbox/terminate', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSandboxInfo(null);
+      setShowAlert(false);
+    } catch {
+      // Ignore
+    }
+    setTerminating(false);
+  };
+
+  if (!showAlert || !sandboxInfo) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
+      <div className="w-96 rounded-lg border border-border-light bg-surface-primary p-5 shadow-xl">
+        <div className="mb-3 flex items-center gap-2">
+          <AlertCircle className="h-5 w-5 text-yellow-500" />
+          <h2 className="text-base font-semibold text-text-primary">جلسة sandbox نشطة</h2>
+          <button
+            onClick={() => setShowAlert(false)}
+            className="mr-auto text-text-secondary hover:text-text-primary"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mb-3 text-sm text-text-secondary">
+          يوجد sandbox نشط من محادثة سابقة. يمكنك:
+        </p>
+        <div className="mb-4 rounded-lg border border-border-light bg-surface-secondary p-3">
+          <div className="flex justify-between text-xs">
+            <span className="text-text-secondary">معرف الـ sandbox:</span>
+            <span className="font-mono text-text-primary">{sandboxInfo.sandboxId?.slice(0, 20)}...</span>
+          </div>
+          <div className="mt-1 flex justify-between text-xs">
+            <span className="text-text-secondary">الحالة:</span>
+            <span className="font-mono text-green-500">{sandboxInfo.status}</span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowAlert(false)}
+            className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
+          >
+            متابعة باستخدام الـ sandbox الحالي
+          </button>
+          <button
+            onClick={handleTerminate}
+            disabled={terminating}
+            className="rounded-lg border border-red-500 px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
+          >
+            {terminating ? 'جاري الإنهاء...' : 'إنهاء الجلسة'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WorkspaceButton() {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<{ name: string; size: number }[]>([]);
   const [loading, setLoading] = useState(false);
-  const conversationId = useRecoilValue(store.conversationIdByIndex(0));
 
   const fetchFiles = useCallback(async () => {
-    if (!conversationId) {
-      return;
-    }
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`/api/sandbox/files?conversationId=${conversationId}`, {
+      const res = await fetch('/api/sandbox/files', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -36,7 +125,7 @@ function WorkspaceButton() {
       setFiles([]);
     }
     setLoading(false);
-  }, [conversationId]);
+  }, []);
 
   return (
     <>
@@ -121,6 +210,8 @@ function Header() {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   return (
+    <>
+    <SandboxSessionCheck />
     <div className="via-presentation/70 md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 absolute top-0 z-10 flex h-[52px] w-full items-center justify-between bg-gradient-to-b from-presentation to-transparent p-2 font-semibold text-text-primary 2xl:via-transparent">
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="mx-1 flex items-center">
@@ -168,6 +259,7 @@ function Header() {
       {/* Empty div for spacing */}
       <div />
     </div>
+    </>
   );
 }
 

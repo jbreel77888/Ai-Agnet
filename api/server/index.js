@@ -355,24 +355,18 @@ const startServer = async () => {
   // ── Sandbox Files API ──────────────────────────────────────────────────
   app.get('/api/sandbox/files', optionalJwtAuth, async (req, res) => {
     try {
-      var conversationId = req.query.conversationId;
-      if (!conversationId) {
-        return res.json({ files: [] });
-      }
-      // Lazy require to avoid circular deps at startup
+      // Lazy require to get the module-level sandbox
       var TLMod;
       try {
         TLMod = require('./app/clients/tools/structured/TensorlakeCodeInterpreter');
       } catch (e) {
         return res.json({ files: [], error: 'sandbox module not available' });
       }
-      var cache = TLMod._sandboxCache || TLMod.sandboxCache;
-      if (!cache) {
-        return res.json({ files: [] });
-      }
-      var cached = cache.get(conversationId);
-      if (!cached) {
-        return res.json({ files: [], message: 'No sandbox for this conversation' });
+      // The module exports _sandboxCache with a get() method
+      // that returns { sandbox, sandboxId } or null
+      var cached = TLMod._sandboxCache ? TLMod._sandboxCache.get() : null;
+      if (!cached || !cached.sandbox) {
+        return res.json({ files: [], message: 'No active sandbox. Ask the agent to run some code first.' });
       }
       var sandbox = cached.sandbox;
       var dirListing = await sandbox.listDirectory('/home/tl-user');
@@ -397,6 +391,56 @@ const startServer = async () => {
     } catch (err) {
       console.error('[Sandbox Files API] Error:', err.message);
       res.status(500).json({ error: 'Failed to list files', message: err.message });
+    }
+  });
+
+  // ── Sandbox Status API ─────────────────────────────────────────────────
+  app.get('/api/sandbox/status', optionalJwtAuth, async (req, res) => {
+    try {
+      var TLMod;
+      try {
+        TLMod = require('./app/clients/tools/structured/TensorlakeCodeInterpreter');
+      } catch (e) {
+        return res.json({ active: false });
+      }
+      var cached = TLMod._sandboxCache ? TLMod._sandboxCache.get() : null;
+      if (!cached || !cached.sandbox) {
+        return res.json({ active: false });
+      }
+      try {
+        var status = await cached.sandbox.status();
+        res.json({
+          active: true,
+          sandboxId: cached.sandboxId,
+          status: typeof status === 'string' ? status : JSON.stringify(status),
+        });
+      } catch (e) {
+        res.json({ active: false, error: e.message });
+      }
+    } catch (err) {
+      res.json({ active: false });
+    }
+  });
+
+  // ── Sandbox Terminate API ──────────────────────────────────────────────
+  app.post('/api/sandbox/terminate', optionalJwtAuth, async (req, res) => {
+    try {
+      var TLMod;
+      try {
+        TLMod = require('./app/clients/tools/structured/TensorlakeCodeInterpreter');
+      } catch (e) {
+        return res.json({ success: false, error: 'module not available' });
+      }
+      // Access the module-level _sandbox variable
+      // We need to expose a terminate method on the module
+      if (TLMod._terminateSandbox) {
+        await TLMod._terminateSandbox();
+        res.json({ success: true, message: 'Sandbox terminated' });
+      } else {
+        res.json({ success: false, error: 'No terminate function available' });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 

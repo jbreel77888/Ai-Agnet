@@ -98,6 +98,7 @@ class TensorlakeCodeInterpreter extends Tool {
     const sandbox = await Sandbox.create({
       apiKey,
       name: sandboxName,
+      image: 'tensorlake/ubuntu-systemd',
       memoryMb: 1024,
       diskMb: 10000,
       vcpus: 1.0,
@@ -199,3 +200,12 @@ class TensorlakeCodeInterpreter extends Tool {
 module.exports = TensorlakeCodeInterpreter;
 module.exports._sandboxCache = { get: () => _sandbox ? { sandbox: _sandbox, sandboxId: _sandboxId } : null };
 module.exports.sandboxCache = module.exports._sandboxCache;
+module.exports._terminateSandbox = async () => {
+  if (_sandbox) {
+    try { await _sandbox.terminate(); } catch (e) {}
+    _sandbox = null;
+    _sandboxId = null;
+    _sandboxLastUsed = 0;
+    console.log('[Tensorlake] Sandbox terminated via API');
+  }
+};
