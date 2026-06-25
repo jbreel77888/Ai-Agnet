@@ -178,3 +178,9 @@ hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
 codedb.snapshot
+
+# Environment-specific folders (not part of the Ai Norx project)
+agent-ctx/
+upload/
+download/
+db/
