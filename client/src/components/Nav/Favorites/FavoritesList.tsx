@@ -12,7 +12,6 @@ import {
   useGetConversation,
   useFavorites,
   useLocalize,
-  useShowMarketplace,
   useNewConvo,
 } from '~/hooks';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -128,7 +127,7 @@ export default function FavoritesList({
   const search = useRecoilValue(store.search);
   const getConversation = useGetConversation(0);
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
-  const showAgentMarketplace = useShowMarketplace();
+  const showAgentMarketplace = false; // Marketplace removed — see refactor plan Phase 2
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();

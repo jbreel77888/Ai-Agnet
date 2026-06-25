@@ -40,6 +40,48 @@ router.use('/tools', configMiddleware, tools);
  * @route GET /agents/categories
  */
 router.get('/categories', v1.getAgentCategories);
+
+/**
+ * Get the default agent for the current user's role.
+ * @route GET /agents/default
+ * @returns {Agent|null} 200 - The default agent for the user's role, or null
+ */
+router.get('/default', checkAgentAccess, v1.getDefaultAgent);
+
+/**
+ * Set an agent as the default for the specified roles.
+ * Removes isDefault from any other agents for the same roles first.
+ * @route POST /agents/:id/set-default
+ * @param {string} req.params.id - The agent ID to set as default.
+ * @param {string[]} [req.body.roles=['USER','ADMIN']] - Which roles use this agent by default.
+ * @returns {Agent} 200 - The updated agent
+ */
+router.post(
+  '/:id/set-default',
+  checkAgentCreate,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'id',
+  }),
+  v1.setDefaultAgent,
+);
+
+/**
+ * Remove default status from an agent.
+ * @route POST /agents/:id/unset-default
+ * @param {string} req.params.id - The agent ID to unset as default.
+ * @returns {Agent} 200 - The updated agent
+ */
+router.post(
+  '/:id/unset-default',
+  checkAgentCreate,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'id',
+  }),
+  v1.unsetDefaultAgent,
+);
+
 /**
  * Creates an agent.
  * @route POST /agents

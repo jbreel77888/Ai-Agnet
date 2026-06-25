@@ -11,10 +11,12 @@ import { clearModelForNonEphemeralAgent } from './endpoints';
 import { getLocalStorageItems } from './localStorage';
 
 /**
- * The central agent that all USER-role conversations must use.
- * ADMIN can use any agent; USER can only use this one.
+ * Legacy fallback — used ONLY when no default agent is configured in DB.
+ * The new system queries /api/agents/default to determine which agent to use
+ * for new conversations in Agent Mode. This constant is kept for backward
+ * compatibility with existing conversations that may still reference it.
  */
-const PRIMARY_AGENT_ID = 'agent_primary';
+const LEGACY_PRIMARY_AGENT_ID = 'agent_primary';
 
 const buildDefaultConvo = ({
   models,
@@ -23,14 +25,18 @@ const buildDefaultConvo = ({
   lastConversationSetup,
   defaultParamsEndpoint,
   userRole,
+  defaultAgentId,
 }: {
   models: string[];
   conversation: TConversation;
   endpoint?: EModelEndpoint | null;
   lastConversationSetup: TConversation | null;
   defaultParamsEndpoint?: string | null;
-  /** Optional: role of the current user. When USER, forces primary-agent. */
+  /** Optional: role of the current user. When USER, forces default agent. */
   userRole?: string;
+  /** Optional: ID of the agent marked as default (from /api/agents/default).
+   *  Falls back to legacy 'agent_primary' if not provided. */
+  defaultAgentId?: string | null;
 }): TConversation => {
   const { lastSelectedModel, lastSelectedTools } = getLocalStorageItems();
   const endpointType = lastConversationSetup?.endpointType ?? conversation.endpointType;
@@ -80,21 +86,24 @@ const buildDefaultConvo = ({
 
   // Ensures agent_id is always defined
   const agentId = convo?.agent_id ?? '';
-  const defaultAgentId = lastConversationSetup?.agent_id ?? '';
+  const lastAgentId = lastConversationSetup?.agent_id ?? '';
   if (
     isAgentsEndpoint(endpoint) &&
     agentId &&
-    (!defaultAgentId || isEphemeralAgentId(defaultAgentId))
+    (!lastAgentId || isEphemeralAgentId(lastAgentId))
   ) {
     defaultConvo.agent_id = agentId;
   }
 
-  // ── Central-agent policy ───────────────────────────────────────────
-  // USER role always uses primary-agent on the agents endpoint.
+  // ── Default-Agent policy ───────────────────────────────────────────
+  // USER role always uses the default agent on the agents endpoint.
+  // The default agent ID comes from /api/agents/default (DB-driven).
+  // ADMIN role can use any agent they pick — they are NOT forced to the default.
   // The model field for agents endpoint = agent_id (LibreChat convention).
   if (userRole === SystemRoles.USER && isAgentsEndpoint(endpoint)) {
-    defaultConvo.agent_id = PRIMARY_AGENT_ID;
-    defaultConvo.model = PRIMARY_AGENT_ID;
+    const effectiveAgentId = defaultAgentId ?? LEGACY_PRIMARY_AGENT_ID;
+    defaultConvo.agent_id = effectiveAgentId;
+    defaultConvo.model = effectiveAgentId;
     // USERS cannot toggle tools — they use the agent's configured tools
     defaultConvo.tools = undefined;
   } else {

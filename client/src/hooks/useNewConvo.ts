@@ -35,6 +35,7 @@ import {
   logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import { useGetDefaultAgentQuery } from '~/data-provider/Agents/queries';
 import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
@@ -64,6 +65,14 @@ const useNewConvo = (index = 0) => {
 
   const { user } = useAuthContext();
   const userRole = user?.role;
+
+  // Fetch the default agent for new conversations in Agent Mode.
+  // Only enabled when the agents endpoint is available — avoids an extra request
+  // when the user doesn't have agents access.
+  const { data: defaultAgentData } = useGetDefaultAgentQuery({
+    enabled: !!endpointsConfig?.agents,
+  });
+  const defaultAgentId = defaultAgentData?.id ?? null;
 
   const modelsQuery = useGetModelsQuery();
   const assistantsListMap = useAssistantListMap();
@@ -210,6 +219,7 @@ const useNewConvo = (index = 0) => {
             models,
             defaultParamsEndpoint,
             userRole,
+            defaultAgentId,
           });
 
           if (hasExplicitChatProjectId) {

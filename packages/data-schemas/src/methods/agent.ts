@@ -436,6 +436,26 @@ export function createAgentMethods(
     const { updatingUserId = null, forceVersion = false, skipVersioning = false } = options;
     const mongoOptions = { new: true, upsert: false };
 
+    // ── AUDIT LOG ─────────────────────────────────────────────────────────
+    // Helps detect unexpected agent updates (e.g., from sandbox or chat flow).
+    // Filter out sensitive fields from the log. Stack trace helps pinpoint the caller.
+    if (process.env.NODE_ENV !== 'test' && process.env.AGENT_UPDATE_LOG !== 'off') {
+      try {
+        const safeFields = Object.keys(updateData).filter(
+          (k) => !['apiKey', 'credentials', 'secret'].includes(k),
+        );
+        logger.info('[updateAgent]', {
+          search: JSON.stringify(searchParameter),
+          fields: safeFields,
+          updatingUserId,
+          skipVersioning,
+          timestamp: new Date().toISOString(),
+        });
+      } catch {
+        // logging is best-effort — never fail the update because of logging
+      }
+    }
+
     const currentAgent = await Agent.findOne(searchParameter);
     if (currentAgent) {
       const {

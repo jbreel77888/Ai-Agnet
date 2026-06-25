@@ -62,9 +62,15 @@ const getDefaultEndpoint = ({
   endpointsConfig,
   userRole,
 }: TDefaultEndpoint): EModelEndpoint | undefined => {
-  // ── Central-agent policy ───────────────────────────────────────────
-  // USER role can only use the 'agents' endpoint.
-  if (userRole === SystemRoles.USER && endpointsConfig?.agents) {
+  // ── Default-Agent policy ───────────────────────────────────────────
+  // ALL users (USER and ADMIN) start new conversations on the agents endpoint
+  // by default. The ModeSwitcher in the Header lets users switch to Chat mode
+  // (custom endpoint) if they want a plain LLM chat without agent tools.
+  //
+  // Previously: USER was forced to 'agents' here, and ADMIN fell through to
+  // the localStorage/setup logic. Now both roles default to 'agents' for
+  // consistency with the new ModeSwitcher UX (Agent Mode = default).
+  if (endpointsConfig?.agents) {
     return 'agents' as EModelEndpoint;
   }
 

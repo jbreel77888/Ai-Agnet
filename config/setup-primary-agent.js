@@ -224,12 +224,39 @@ async function setupPrimaryAgent() {
     authorName: adminUser.name || adminUser.username || 'Admin',
   };
 
+  // ── SEED-ONCE POLICY ───────────────────────────────────────────────────
+  // CRITICAL FIX: Do NOT overwrite an existing agent_primary.
+  // Previous behavior: db.updateAgent() clobbered the entire document with
+  // hardcoded Arabic instructions every time this script ran — wiping out
+  // any edits the Admin made via the UI.
+  //
+  // New behavior: only create the agent if it doesn't exist. If it exists,
+  // preserve ALL admin edits. We still ensure ACL grants are in place
+  // (idempotent) and ensure the agent is marked as default (idempotent).
   if (agent) {
-    agent = await db.updateAgent({ id: PRIMARY_AGENT_ID }, agentData);
-    console.log(`✓ Updated existing primary-agent: ${agent._id}`);
+    console.log(`✓ Primary agent already exists (id: ${agent.id}). Skipping content overwrite — admin edits preserved.`);
+
+    // Idempotent: ensure isDefault flag is set (does NOT touch instructions/tools/model)
+    if (!agent.isDefault) {
+      try {
+        agent = await db.updateAgent(
+          { id: PRIMARY_AGENT_ID },
+          { isDefault: true, defaultForRoles: [SystemRoles.USER, SystemRoles.ADMIN] },
+        );
+        console.log('  ✓ Marked existing agent as default (isDefault=true)');
+      } catch (err) {
+        console.error('  ⚠ Failed to set isDefault on existing agent:', err.message);
+      }
+    } else {
+      console.log('  ✓ isDefault already set — no changes needed');
+    }
   } else {
-    agent = await db.createAgent(agentData);
-    console.log(`✓ Created new primary-agent: ${agent._id}`);
+    agent = await db.createAgent({
+      ...agentData,
+      isDefault: true,
+      defaultForRoles: [SystemRoles.USER, SystemRoles.ADMIN],
+    });
+    console.log(`✓ Created new primary-agent: ${agent._id} (marked as default)`);
   }
 
   // Grant ACL permissions

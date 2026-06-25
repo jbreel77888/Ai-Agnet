@@ -189,3 +189,27 @@ export const useMarketplaceAgentsInfiniteQuery = (
     ...config,
   });
 };
+
+/**
+ * Hook for getting the default agent for the current user's role.
+ * Used by the new ModeSwitcher logic to determine which agent to use
+ * when a user starts a new conversation in Agent Mode.
+ *
+ * Falls back to agent_primary on the backend if no isDefault agent exists.
+ */
+export const useGetDefaultAgentQuery = <TData = Partial<t.Agent>>(
+  config?: UseQueryOptions<Partial<t.Agent>, unknown, TData>,
+): QueryObserverResult<Partial<t.Agent>, unknown, TData> => {
+  return useQuery<Partial<t.Agent>, unknown, TData>(
+    [QueryKeys.agent, 'default'],
+    () => dataService.getDefaultAgent(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 60 * 1000, // 1 minute
+      cacheTime: 5 * 60 * 1000, // 5 minutes
+      ...config,
+    },
+  );
+};

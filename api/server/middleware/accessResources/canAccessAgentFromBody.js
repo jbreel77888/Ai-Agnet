@@ -1,4 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
 const {
   Constants,
   Permissions,
@@ -166,8 +167,11 @@ const canAccessAgentFromBody = (options) => {
       const { endpoint, agent_id } = req.body;
       let agentId = agent_id;
 
-      // ── Central-agent policy ─────────────────────────────────────────
-      // USER role must always use the primary-agent on the agents endpoint.
+      // ── Default-Agent policy (DB-driven) ──────────────────────────────
+      // USER role must use the default agent on the agents endpoint.
+      // The default agent is determined by querying the DB for isDefault=true
+      // for the user's role. Falls back to legacy 'agent_primary' if no
+      // default agent is configured.
       // ADMIN role is unaffected and can use any agent / any endpoint.
       if (req.user?.role === SystemRoles.USER) {
         if (!isAgentsEndpoint(endpoint)) {
@@ -176,10 +180,32 @@ const canAccessAgentFromBody = (options) => {
             message: 'Users can only use the agents endpoint.',
           });
         }
-        // Force primary-agent
-        agentId = PRIMARY_AGENT_ID;
-        req.body.agent_id = PRIMARY_AGENT_ID;
-        req.body.model = PRIMARY_AGENT_ID;
+
+        // Resolve the default agent for this user's role from DB
+        let resolvedDefaultId = PRIMARY_AGENT_ID; // legacy fallback
+        try {
+          const Agent = mongoose.models.Agent;
+          if (Agent) {
+            const defaultAgent = await Agent.findOne({
+              tenantId: req.user?.tenantId,
+              isDefault: true,
+              defaultForRoles: req.user.role,
+            }).lean();
+            if (defaultAgent?.id) {
+              resolvedDefaultId = defaultAgent.id;
+            }
+          }
+        } catch (lookupErr) {
+          logger.warn(
+            '[canAccessAgentFromBody] Failed to lookup default agent, using legacy fallback:',
+            lookupErr?.message,
+          );
+        }
+
+        // Force the default agent
+        agentId = resolvedDefaultId;
+        req.body.agent_id = resolvedDefaultId;
+        req.body.model = resolvedDefaultId;
       }
 
       if (!isAgentsEndpoint(endpoint)) {

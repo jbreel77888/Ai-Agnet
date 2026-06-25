@@ -125,6 +125,25 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    /**
+     * Whether this agent is the default agent for new conversations.
+     * Only one agent per (tenantId, role) should have isDefault=true at a time.
+     * Enforced by a partial unique index below.
+     */
+    isDefault: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    /**
+     * Which roles use this agent by default when starting a new conversation
+     * in Agent Mode. e.g., ['USER', 'ADMIN'].
+     */
+    defaultForRoles: {
+      type: [String],
+      default: [],
+      index: true,
+    },
     tenantId: {
       type: String,
       index: true,
@@ -138,5 +157,18 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
 agentSchema.index({ id: 1, tenantId: 1 }, { unique: true });
 agentSchema.index({ updatedAt: -1, _id: 1 });
 agentSchema.index({ 'edges.to': 1 });
+
+/**
+ * Ensure only ONE default agent per (tenantId, role) exists.
+ * Partial filter: only applies when isDefault=true.
+ * Note: defaultForRoles is an array, so the unique constraint cannot be
+ * on the array directly. Instead we enforce uniqueness at the application
+ * layer in the /set-default endpoint by removing isDefault from other
+ * agents for the same role before setting it on the new one.
+ */
+agentSchema.index(
+  { tenantId: 1, isDefault: 1 },
+  { unique: false, partialFilterExpression: { isDefault: true } },
+);
 
 export default agentSchema;

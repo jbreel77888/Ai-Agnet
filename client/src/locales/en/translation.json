@@ -1923,5 +1923,11 @@
   "com_ui_zoom_in": "Zoom in",
   "com_ui_zoom_level": "Zoom level",
   "com_ui_zoom_out": "Zoom out",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_ui_agent_mode": "Agent Mode",
+  "com_ui_chat_mode": "Chat",
+  "com_ui_conversation_mode": "Conversation Mode",
+  "com_agents_set_as_default": "Set as Default Agent",
+  "com_agents_default_description": "This agent will be used automatically when starting any new conversation in Agent Mode",
+  "com_agents_default_badge": "Default"
 }

@@ -50,5 +50,9 @@ export interface IAgent extends Omit<Document, 'model'> {
   tool_options?: AgentToolOptions;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Whether this agent is the default for new conversations in Agent Mode */
+  isDefault?: boolean;
+  /** Which roles use this agent by default (e.g., ['USER', 'ADMIN']) */
+  defaultForRoles?: string[];
   tenantId?: string;
 }

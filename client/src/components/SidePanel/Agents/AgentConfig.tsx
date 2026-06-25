@@ -39,6 +39,7 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
+import DefaultAgentToggle from './DefaultAgentToggle';
 
 /** A skill lookup only counts as a confirmed miss on 404/403 — deleted or no
  *  longer shared. Transient/network/server errors must not present a valid
@@ -258,6 +259,8 @@ export default function AgentConfig() {
   return (
     <>
       <div className="h-auto pt-1">
+        {/* Default Agent Toggle (ADMIN only, existing agents only) */}
+        <DefaultAgentToggle />
         {/* Avatar & Name */}
         <div className="mb-4">
           <AgentAvatar avatar={agent?.['avatar'] ?? null} />

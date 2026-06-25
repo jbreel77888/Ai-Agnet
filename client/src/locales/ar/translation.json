@@ -700,5 +700,11 @@
   "com_ui_versions": "الإصدارات",
   "com_ui_yes": "نعم",
   "com_ui_zoom": "تكبير",
-  "com_user_message": "أنت"
+  "com_user_message": "أنت",
+  "com_ui_agent_mode": "وضع المساعد",
+  "com_ui_chat_mode": "دردشة",
+  "com_ui_conversation_mode": "وضع المحادثة",
+  "com_agents_set_as_default": "تعيين كـ Agent افتراضي",
+  "com_agents_default_description": "سيتم استخدام هذا الـ Agent تلقائياً عند بدء أي محادثة جديدة في وضع Agent Mode",
+  "com_agents_default_badge": "افتراضي"
 }

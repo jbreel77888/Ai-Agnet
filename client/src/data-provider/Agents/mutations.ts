@@ -406,3 +406,40 @@ export const useRevertAgentVersionMutation = (
 export const invalidateAgentMarketplaceQueries = (queryClient: QueryClient) => {
   queryClient.invalidateQueries([QueryKeys.marketplaceAgents]);
 };
+
+/**
+ * Set an agent as the default for the specified roles.
+ * Invalidates: agents list, default agent, marketplace agents
+ */
+export const useSetDefaultAgentMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ agent_id, roles }: { agent_id: string; roles?: string[] }) =>
+      dataService.setDefaultAgent({ agent_id, roles }),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.agents]);
+        queryClient.invalidateQueries([QueryKeys.agent, 'default']);
+        queryClient.invalidateQueries([QueryKeys.marketplaceAgents]);
+      },
+    },
+  );
+};
+
+/**
+ * Remove default status from an agent.
+ * Invalidates: agents list, default agent, marketplace agents
+ */
+export const useUnsetDefaultAgentMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    ({ agent_id }: { agent_id: string }) => dataService.unsetDefaultAgent({ agent_id }),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.agents]);
+        queryClient.invalidateQueries([QueryKeys.agent, 'default']);
+        queryClient.invalidateQueries([QueryKeys.marketplaceAgents]);
+      },
+    },
+  );
+};

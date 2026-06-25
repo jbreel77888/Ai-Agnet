@@ -32,14 +32,20 @@ function AgentSelect({
     { requiredPermission: permissionLevel },
     {
       select: (res) =>
-        res.data.map((agent) =>
-          processAgentOption({
+        res.data.map((agent) => {
+          const processed = processAgentOption({
             agent: {
               ...agent,
               name: agent.name || agent.id,
             },
-          }),
-        ),
+          });
+          // Append a "Default" badge to the label if this agent is the default
+          const isDefault = (agent as { isDefault?: boolean })?.isDefault === true;
+          if (isDefault) {
+            processed.label = `${processed.label} ★`;
+          }
+          return processed;
+        }),
     },
   );
 

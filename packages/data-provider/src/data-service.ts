@@ -577,6 +577,50 @@ export const revertAgentVersion = ({
   version_index: number;
 }): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
 
+/* Default Agent */
+
+/**
+ * Get the default agent for the current user's role.
+ * Falls back to agent_primary if no isDefault agent is configured.
+ */
+export const getDefaultAgent = (): Promise<Partial<a.Agent>> => {
+  return request.get(
+    endpoints.agents({
+      path: 'default',
+    }),
+  );
+};
+
+/**
+ * Set an agent as the default for the specified roles.
+ * Removes isDefault from any other agents for the same roles first.
+ */
+export const setDefaultAgent = ({
+  agent_id,
+  roles = ['USER', 'ADMIN'],
+}: {
+  agent_id: string;
+  roles?: string[];
+}): Promise<a.Agent> => {
+  return request.post(
+    endpoints.agents({
+      path: `${agent_id}/set-default`,
+    }),
+    { roles },
+  );
+};
+
+/**
+ * Remove default status from an agent.
+ */
+export const unsetDefaultAgent = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
+  return request.post(
+    endpoints.agents({
+      path: `${agent_id}/unset-default`,
+    }),
+  );
+};
+
 /* Marketplace */
 
 /**

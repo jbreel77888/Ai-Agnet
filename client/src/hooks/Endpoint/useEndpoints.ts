@@ -16,7 +16,7 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
-import { useHasAccess, useShowMarketplace } from '~/hooks';
+import { useHasAccess } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mapEndpoints, getIconKey } from '~/utils';
 import { icons } from './Icons';
@@ -46,7 +46,9 @@ export const useEndpoints = ({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
   });
-  const showAgentMarketplace = useShowMarketplace();
+  // Marketplace was removed — agent endpoint visibility is now determined
+  // solely by hasAgentAccess and whether agents exist.
+  const showAgentMarketplace = false;
 
   const assistants: Assistant[] = useMemo(
     () => Object.values(assistantsMap?.[EModelEndpoint.assistants] ?? {}),

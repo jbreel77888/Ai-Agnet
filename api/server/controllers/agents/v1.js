@@ -30,7 +30,9 @@ const {
   AgentCapabilities,
   EModelEndpoint,
   removeNullishValues,
+  SystemRoles,
 } = require('librechat-data-provider');
+const mongoose = require('mongoose');
 const {
   findPubliclyAccessibleResources,
   getResourcePermissionsMap,
@@ -1304,6 +1306,154 @@ const getAgentCategories = async (_req, res) => {
     });
   }
 };
+
+/**
+ * GET /api/agents/default
+ * Returns the default agent for the current user's role.
+ * Falls back to agent_primary if no isDefault agent is configured.
+ */
+const getDefaultAgentHandler = async (req, res) => {
+  try {
+    const userRole = req.user?.role ?? SystemRoles.USER;
+    const tenantId = req.user?.tenantId;
+    const Agent = mongoose.models.Agent;
+
+    // Find the agent marked as default for this role
+    let agent = null;
+    if (Agent) {
+      agent = await Agent.findOne({
+        tenantId,
+        isDefault: true,
+        defaultForRoles: userRole,
+      }).lean();
+    }
+
+    // Fallback to legacy hardcoded agent_primary
+    if (!agent) {
+      agent = await db.getAgent({ id: 'agent_primary' });
+    }
+
+    if (!agent) {
+      return res.status(404).json({ error: 'No default agent configured' });
+    }
+
+    // Return only safe, non-sensitive fields
+    return res.status(200).json({
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      provider: agent.provider,
+      model: agent.model,
+      isDefault: agent.isDefault ?? false,
+      defaultForRoles: agent.defaultForRoles ?? [],
+      avatar: agent.avatar,
+      category: agent.category,
+    });
+  } catch (error) {
+    logger.error('[getDefaultAgentHandler] Error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * POST /api/agents/:id/set-default
+ * Marks an agent as the default for the specified roles (default: USER + ADMIN).
+ * Removes isDefault from any other agents for the same roles first.
+ */
+const setDefaultAgentHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { roles = [SystemRoles.USER, SystemRoles.ADMIN] } = req.body;
+    const tenantId = req.user?.tenantId;
+    const Agent = mongoose.models.Agent;
+
+    if (!Agent) {
+      return res.status(500).json({ error: 'Agent model not initialized' });
+    }
+
+    // Validate roles array
+    if (!Array.isArray(roles) || roles.length === 0) {
+      return res.status(400).json({ error: 'roles must be a non-empty array' });
+    }
+    const validRoles = roles.filter((r) => [SystemRoles.USER, SystemRoles.ADMIN].includes(r));
+    if (validRoles.length === 0) {
+      return res.status(400).json({ error: 'roles must contain at least one of: USER, ADMIN' });
+    }
+
+    // Verify the agent exists
+    const agent = await db.getAgent({ id });
+    if (!agent) {
+      return res.status(404).json({ error: `Agent not found: ${id}` });
+    }
+
+    // Remove isDefault + these roles from all other agents for this tenant
+    await Agent.updateMany(
+      {
+        tenantId,
+        id: { $ne: id },
+        isDefault: true,
+      },
+      {
+        $set: { isDefault: false, defaultForRoles: [] },
+      },
+    );
+
+    // Set this agent as default for the specified roles
+    const updated = await db.updateAgent(
+      { id },
+      { isDefault: true, defaultForRoles: validRoles },
+      { updatingUserId: req.user?._id },
+    );
+
+    logger.info(
+      `[setDefaultAgent] Agent ${id} is now the default for roles: ${validRoles.join(', ')}`,
+    );
+
+    return res.status(200).json({
+      id: updated.id,
+      name: updated.name,
+      isDefault: updated.isDefault,
+      defaultForRoles: updated.defaultForRoles,
+    });
+  } catch (error) {
+    logger.error('[setDefaultAgentHandler] Error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * POST /api/agents/:id/unset-default
+ * Removes default status from an agent.
+ */
+const unsetDefaultAgentHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const agent = await db.getAgent({ id });
+    if (!agent) {
+      return res.status(404).json({ error: `Agent not found: ${id}` });
+    }
+
+    const updated = await db.updateAgent(
+      { id },
+      { isDefault: false, defaultForRoles: [] },
+      { updatingUserId: req.user?._id },
+    );
+
+    logger.info(`[unsetDefaultAgent] Agent ${id} is no longer the default`);
+
+    return res.status(200).json({
+      id: updated.id,
+      name: updated.name,
+      isDefault: updated.isDefault,
+      defaultForRoles: updated.defaultForRoles,
+    });
+  } catch (error) {
+    logger.error('[unsetDefaultAgentHandler] Error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
@@ -1315,4 +1465,7 @@ module.exports = {
   revertAgentVersion: revertAgentVersionHandler,
   getAgentCategories,
   filterAuthorizedTools,
+  getDefaultAgent: getDefaultAgentHandler,
+  setDefaultAgent: setDefaultAgentHandler,
+  unsetDefaultAgent: unsetDefaultAgentHandler,
 };
