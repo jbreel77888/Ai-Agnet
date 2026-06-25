@@ -95,12 +95,15 @@ class TensorlakeCodeInterpreter extends Tool {
     const { Sandbox } = require('tensorlake');
     const sandboxName = `lc-${Date.now().toString(36)}`;
     console.log(`[Tensorlake] Creating new sandbox ${sandboxName}...`);
+    // NOTE: diskMb MUST be omitted (or >= 10240) for snapshot-backed images
+    // like ubuntu-systemd. The image's authoritative size is 10240 MiB and
+    // Tensorlake rejects any attempt to shrink below it.
+    // See: https://docs.tensorlake.ai/docs/sandboxes/create
     const sandbox = await Sandbox.create({
       apiKey,
       name: sandboxName,
       image: 'tensorlake/ubuntu-systemd',
-      memoryMb: 1024,
-      diskMb: 10000,
+      memoryMb: 2048,
       vcpus: 1.0,
     });
 
