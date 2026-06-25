@@ -172,7 +172,8 @@ const canAccessAgentFromBody = (options) => {
       // The default agent is determined by querying the DB for isDefault=true
       // for the user's role. Falls back to legacy 'agent_primary' if no
       // default agent is configured.
-      // ADMIN role is unaffected and can use any agent / any endpoint.
+      // ADMIN role can use any agent they pick via the Agent Builder side
+      // panel, but if no agent_id is provided, the default agent is used.
       if (req.user?.role === SystemRoles.USER) {
         if (!isAgentsEndpoint(endpoint)) {
           return res.status(403).json({
@@ -180,29 +181,47 @@ const canAccessAgentFromBody = (options) => {
             message: 'Users can only use the agents endpoint.',
           });
         }
+      }
 
-        // Resolve the default agent for this user's role from DB
-        let resolvedDefaultId = PRIMARY_AGENT_ID; // legacy fallback
-        try {
-          const Agent = mongoose.models.Agent;
-          if (Agent) {
-            const defaultAgent = await Agent.findOne({
-              tenantId: req.user?.tenantId,
-              isDefault: true,
-              defaultForRoles: req.user.role,
-            }).lean();
-            if (defaultAgent?.id) {
-              resolvedDefaultId = defaultAgent.id;
-            }
+      // Resolve the default agent ID from DB (used as fallback for both
+      // USER and ADMIN when no specific agent_id is provided on the agents
+      // endpoint). Falls back to legacy 'agent_primary' if not configured.
+      let resolvedDefaultId = PRIMARY_AGENT_ID; // legacy fallback
+      try {
+        const Agent = mongoose.models.Agent;
+        if (Agent) {
+          const userRole = req.user?.role ?? SystemRoles.USER;
+          const defaultAgent = await Agent.findOne({
+            tenantId: req.user?.tenantId,
+            isDefault: true,
+            defaultForRoles: userRole,
+          }).lean();
+          if (defaultAgent?.id) {
+            resolvedDefaultId = defaultAgent.id;
           }
-        } catch (lookupErr) {
-          logger.warn(
-            '[canAccessAgentFromBody] Failed to lookup default agent, using legacy fallback:',
-            lookupErr?.message,
-          );
         }
+      } catch (lookupErr) {
+        logger.warn(
+          '[canAccessAgentFromBody] Failed to lookup default agent, using legacy fallback:',
+          lookupErr?.message,
+        );
+      }
 
-        // Force the default agent
+      // For USER role, always force the default agent on the agents endpoint.
+      if (req.user?.role === SystemRoles.USER && isAgentsEndpoint(endpoint)) {
+        agentId = resolvedDefaultId;
+        req.body.agent_id = resolvedDefaultId;
+        req.body.model = resolvedDefaultId;
+      }
+
+      // For ADMIN role on agents endpoint with no agent_id, use the default.
+      // This happens when the ModeSwitcher starts a new conversation in Agent
+      // Mode without an explicit agent selection.
+      if (
+        req.user?.role === SystemRoles.ADMIN &&
+        isAgentsEndpoint(endpoint) &&
+        !agentId
+      ) {
         agentId = resolvedDefaultId;
         req.body.agent_id = resolvedDefaultId;
         req.body.model = resolvedDefaultId;

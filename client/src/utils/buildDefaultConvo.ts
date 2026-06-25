@@ -96,18 +96,37 @@ const buildDefaultConvo = ({
   }
 
   // ── Default-Agent policy ───────────────────────────────────────────
-  // USER role always uses the default agent on the agents endpoint.
-  // The default agent ID comes from /api/agents/default (DB-driven).
-  // ADMIN role can use any agent they pick — they are NOT forced to the default.
+  // Both USER and ADMIN start new conversations on the agents endpoint with
+  // the default agent (DB-driven via /api/agents/default).
+  // The ModeSwitcher in the Header no longer exposes agent selection — both
+  // roles get the default agent automatically.
   // The model field for agents endpoint = agent_id (LibreChat convention).
-  if (userRole === SystemRoles.USER && isAgentsEndpoint(endpoint)) {
-    const effectiveAgentId = defaultAgentId ?? LEGACY_PRIMARY_AGENT_ID;
-    defaultConvo.agent_id = effectiveAgentId;
-    defaultConvo.model = effectiveAgentId;
-    // USERS cannot toggle tools — they use the agent's configured tools
-    defaultConvo.tools = undefined;
+  if (isAgentsEndpoint(endpoint)) {
+    // If the caller already provided an agent_id (e.g., editing an existing
+    // conversation or selecting from a saved preset), keep it.
+    const existingAgentId = defaultConvo.agent_id ?? agentId ?? null;
+    const isEphemeral = isEphemeralAgentId(existingAgentId ?? '');
+
+    // Use the default agent from DB if no specific agent is set, or if the
+    // existing agent is ephemeral (temporary).
+    if (!existingAgentId || isEphemeral) {
+      const effectiveAgentId = defaultAgentId ?? LEGACY_PRIMARY_AGENT_ID;
+      defaultConvo.agent_id = effectiveAgentId;
+      defaultConvo.model = effectiveAgentId;
+    } else {
+      // Keep the existing non-ephemeral agent_id and ensure model matches
+      defaultConvo.model = existingAgentId;
+    }
+
+    // For USER role, tools cannot be toggled — they use the agent's tools.
+    // For ADMIN role, allow last-selected tools to persist.
+    if (userRole === SystemRoles.USER) {
+      defaultConvo.tools = undefined;
+    } else {
+      defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
+    }
   } else {
-    // Clear model for non-ephemeral agents - agents use their configured model internally
+    // Non-agents endpoint (e.g., custom for Chat mode)
     clearModelForNonEphemeralAgent(defaultConvo);
     defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
   }
