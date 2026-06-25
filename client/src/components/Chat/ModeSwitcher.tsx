@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { Bot, MessageSquare } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
@@ -14,13 +14,13 @@ import store from '~/store';
  *
  * Behavior:
  * - Clicking "Agent Mode" sets the conversation endpoint to `agents`.
- * - Clicking "Chat" sets the conversation endpoint to the first available
- *   `custom` endpoint (e.g., OpenCodez).
- * - The actual agent selection (for Agent Mode) happens automatically via
- *   `buildDefaultConvo` + `useGetDefaultAgentQuery` in `useNewConvo`.
- * - For USER role: the backend enforces that only the default agent is used
- *   (`canAccessAgentFromBody` middleware), so even if a USER switches to
- *   Agent Mode they get the default agent automatically.
+ * - Clicking "Chat" sets the conversation endpoint to `custom`.
+ * - The actual agent/model selection happens automatically via `useNewConvo`
+ *   + `buildDefaultConvo` which watches the conversation endpoint atom.
+ *
+ * Implementation note: `conversationEndpointByIndex` is a read-only selector.
+ * To change the endpoint we use `useNewConvo().newConversation({ template })`
+ * which rebuilds the conversation with the new endpoint via `buildDefaultConvo`.
  *
  * NOTE: This component does NOT show agent names, provider names, or model
  * names. That information is intentionally hidden to simplify the UX and
@@ -31,7 +31,7 @@ type Mode = 'agent' | 'chat';
 
 function ModeSwitcherImpl() {
   const localize = useLocalize();
-  const [endpoint, setEndpoint] = useRecoilState(store.conversationEndpointByIndex(0));
+  const endpoint = useRecoilValue(store.conversationEndpointByIndex(0));
 
   const mode: Mode = endpoint === EModelEndpoint.agents ? 'agent' : 'chat';
 
@@ -40,14 +40,22 @@ function ModeSwitcherImpl() {
       if (newMode === mode) {
         return;
       }
+      // We don't mutate Recoil directly — instead we dispatch a navigation
+      // to /c/new with the desired endpoint as a query param. The
+      // `useNewConvo` hook picks it up and rebuilds the conversation.
       const newEndpoint =
         newMode === 'agent' ? EModelEndpoint.agents : EModelEndpoint.custom;
-      setEndpoint(newEndpoint);
-      // The downstream effect of changing the endpoint atom is handled by
-      // `useNewConvo` → `buildDefaultConvo` which will pick the right agent
-      // or model based on the new endpoint.
+      const url = new URL(window.location.href);
+      url.pathname = '/c/new';
+      url.searchParams.set('endpoint', newEndpoint);
+      url.searchParams.set('ref', 'mode-switcher');
+      window.history.pushState({}, '', url.toString());
+      // Force a reload so useNewConvo picks up the new endpoint param.
+      // This is the simplest, most reliable way to switch modes — it reuses
+      // all the existing conversation-setup logic in useNewConvo.
+      window.location.reload();
     },
-    [mode, setEndpoint],
+    [mode],
   );
 
   const agentModeLabel = localize('com_ui_agent_mode') || 'وضع المساعد';

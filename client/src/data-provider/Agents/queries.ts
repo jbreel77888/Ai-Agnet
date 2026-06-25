@@ -199,7 +199,7 @@ export const useMarketplaceAgentsInfiniteQuery = (
  */
 export const useGetDefaultAgentQuery = <TData = Partial<t.Agent>>(
   config?: UseQueryOptions<Partial<t.Agent>, unknown, TData>,
-): QueryObserverResult<Partial<t.Agent>, unknown, TData> => {
+): QueryObserverResult<TData> => {
   return useQuery<Partial<t.Agent>, unknown, TData>(
     [QueryKeys.agent, 'default'],
     () => dataService.getDefaultAgent(),
