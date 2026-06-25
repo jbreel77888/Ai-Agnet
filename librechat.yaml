@@ -49,6 +49,29 @@ webSearch:
   rerankerType: none
 
 # ============================================================================
+# Memory — Built-in long-term memory (no external service needed)
+# ============================================================================
+memory:
+  disabled: false
+  validKeys:
+    - preferences
+    - work_info
+    - personal_info
+    - skills
+    - interests
+    - context
+    - language
+    - goals
+  tokenLimit: 10000
+  maxInputTokens: 12000
+  personalize: true
+  agent:
+    enabled: true
+    provider: 'OpenCodez'
+    model: 'deepseek-v4-flash-free'
+    instructions: 'أنت مساعد إدارة الذاكرة. استخرج المعلومات المهمة عن المستخدم من المحادثة واحفظها.'
+
+# ============================================================================
 # MCP Servers — Model Context Protocol
 # ============================================================================
 # These extend the agent with structured tools for filesystem operations,
