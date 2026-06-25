@@ -242,6 +242,24 @@ const startServer = async () => {
     console.log(`[OpenCodez Proxy] ${req.method} ${req.url} → ${targetUrl}`);
     const isStreamRequest = req.body?.stream === true;
 
+    // NVIDIA fallback helper — shared between timeout and HTTP-error paths.
+    async function callNvidiaFallback(req, res, isStreamRequest) {
+      var nvModel = 'meta/llama-3.3-70b-instruct';
+      var ocModel = (req.body.model || '');
+      if (ocModel.includes('deepseek')) nvModel = 'deepseek-ai/deepseek-r1';
+      else if (ocModel.includes('nemotron')) nvModel = 'nvidia/llama-3.1-nemotron-70b-instruct';
+      var nvBody = JSON.parse(JSON.stringify(req.body));
+      nvBody.model = nvModel;
+      var nvResp = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.NVIDIA_API_KEY, 'Accept': isStreamRequest ? 'text/event-stream' : 'application/json' },
+        body: JSON.stringify(nvBody),
+        signal: AbortSignal.timeout(30000),
+      });
+      console.log(`[NVIDIA Fallback] Response: ${nvResp.status}`);
+      return await streamResponse(nvResp);
+    }
+
     async function streamResponse(proxyResponse) {
       const contentType = proxyResponse.headers.get('content-type') || '';
       res.status(proxyResponse.status);
@@ -287,31 +305,33 @@ const startServer = async () => {
       const fetchOptions = {
         method: req.method,
         headers: { 'Content-Type': 'application/json', 'Accept': isStreamRequest ? 'text/event-stream' : 'application/json' },
+        // Abort upstream fetch after 8s on first byte — if OpenCodez hasn't
+        // started responding by then, fall back to NVIDIA so the UI doesn't
+        // appear "hung" to the user.
+        signal: AbortSignal.timeout(8000),
       };
       if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
         fetchOptions.body = JSON.stringify(req.body);
       }
 
-      const proxyResponse = await fetch(targetUrl, fetchOptions);
-      console.log(`[OpenCodez Proxy] Response: ${proxyResponse.status}`);
+      let proxyResponse;
+      try {
+        proxyResponse = await fetch(targetUrl, fetchOptions);
+        console.log(`[OpenCodez Proxy] Response: ${proxyResponse.status}`);
+      } catch (fetchErr) {
+        // Timeout or network error — try NVIDIA fallback immediately
+        if (process.env.NVIDIA_API_KEY && req.body) {
+          console.log(`[OpenCodez Proxy] Fetch failed (${fetchErr.message}), falling back to NVIDIA`);
+          return await callNvidiaFallback(req, res, isStreamRequest);
+        }
+        throw fetchErr;
+      }
 
       // If OpenCodez fails (429/500/502/503), try NVIDIA fallback
       if (proxyResponse.status >= 429 && process.env.NVIDIA_API_KEY && req.body) {
         console.log(`[OpenCodez Proxy] Failed (${proxyResponse.status}), falling back to NVIDIA`);
         await proxyResponse.text().catch(() => {});
-        var nvModel = 'meta/llama-3.3-70b-instruct';
-        var ocModel = (req.body.model || '');
-        if (ocModel.includes('deepseek')) nvModel = 'deepseek-ai/deepseek-r1';
-        else if (ocModel.includes('nemotron')) nvModel = 'nvidia/llama-3.1-nemotron-70b-instruct';
-        var nvBody = JSON.parse(JSON.stringify(req.body));
-        nvBody.model = nvModel;
-        var nvResp = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.NVIDIA_API_KEY, 'Accept': isStreamRequest ? 'text/event-stream' : 'application/json' },
-          body: JSON.stringify(nvBody),
-        });
-        console.log(`[NVIDIA Fallback] Response: ${nvResp.status}`);
-        return await streamResponse(nvResp);
+        return await callNvidiaFallback(req, res, isStreamRequest);
       }
 
       await streamResponse(proxyResponse);
