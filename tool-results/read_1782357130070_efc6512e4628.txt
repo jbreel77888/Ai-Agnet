@@ -1,0 +1,1056 @@
+     1→#=====================================================================#
+     2→#                       LibreChat Configuration                       #
+     3→#=====================================================================#
+     4→# Please refer to the reference documentation for assistance          #
+     5→# with configuring your LibreChat environment.                        #
+     6→#                                                                     #
+     7→# https://www.librechat.ai/docs/configuration/dotenv                  #
+     8→#=====================================================================#
+     9→
+    10→#==================================================#
+    11→#               Server Configuration               #
+    12→#==================================================#
+    13→
+    14→HOST=localhost
+    15→PORT=3080
+    16→
+    17→MONGO_URI=mongodb://127.0.0.1:27017/LibreChat
+    18→#The maximum number of connections in the connection pool. */
+    19→MONGO_MAX_POOL_SIZE=
+    20→#The minimum number of connections in the connection pool. */
+    21→MONGO_MIN_POOL_SIZE=
+    22→#The maximum number of connections that may be in the process of being established concurrently by the connection pool. */
+    23→MONGO_MAX_CONNECTING=
+    24→#The maximum number of milliseconds that a connection can remain idle in the pool before being removed and closed. */
+    25→MONGO_MAX_IDLE_TIME_MS=
+    26→#The maximum time in milliseconds that a thread can wait for a connection to become available. */
+    27→MONGO_WAIT_QUEUE_TIMEOUT_MS=
+    28→# Set to false to disable automatic index creation for all models associated with this connection. */
+    29→MONGO_AUTO_INDEX=
+    30→# Set to `false` to disable Mongoose automatically calling `createCollection()` on every model created on this connection. */
+    31→MONGO_AUTO_CREATE=
+    32→
+    33→DOMAIN_CLIENT=http://localhost:3080
+    34→DOMAIN_SERVER=http://localhost:3080
+    35→
+    36→# External admin panel base URL used for admin OAuth/SSO redirects.
+    37→# Required when the admin panel is hosted separately from LibreChat.
+    38→# May include a path. Do not include a trailing slash.
+    39→# Example: https://admin.example.com/admin
+    40→ADMIN_PANEL_URL=
+    41→
+    42→# Session encryption key for the bundled admin panel (min 32 characters).
+    43→# The admin panel ships enabled in docker-compose/deploy-compose; the value
+    44→# below is a development default. Generate a unique one for production:
+    45→#   openssl rand -hex 32
+    46→ADMIN_PANEL_SESSION_SECRET=0f7114d0b0b192b59fde7e3b730949b27d49a8717fa32ad3167d94c7684fede3
+    47→
+    48→# Host port for the bundled admin panel (default docker-compose only).
+    49→# In deploy-compose the panel is served at http://admin.localhost via nginx.
+    50→# ADMIN_PANEL_PORT=3000
+    51→
+    52→NO_INDEX=true
+    53→# Use the address that is at most n number of hops away from the Express application.
+    54→# req.socket.remoteAddress is the first hop, and the rest are looked for in the X-Forwarded-For header from right to left.
+    55→# A value of 0 means that the first untrusted address would be req.socket.remoteAddress, i.e. there is no reverse proxy.
+    56→# Defaulted to 1.
+    57→TRUST_PROXY=1
+    58→
+    59→# Minimum password length for user authentication
+    60→# Default: 8
+    61→# Note: When using LDAP authentication, you may want to set this to 1 
+    62→# to bypass local password validation, as LDAP servers handle their own
+    63→# password policies.
+    64→# MIN_PASSWORD_LENGTH=8
+    65→
+    66→# When enabled, the app will continue running after encountering uncaught exceptions
+    67→# instead of exiting the process. Not recommended for production unless necessary.
+    68→# CONTINUE_ON_UNCAUGHT_EXCEPTION=false
+    69→
+    70→#===============#
+    71→# JSON Logging  #
+    72→#===============#
+    73→
+    74→# Use when process console logs in cloud deployment like GCP/AWS
+    75→CONSOLE_JSON=false
+    76→
+    77→# The maximum length of a string in a JSON log object.
+    78→# Default: 255
+    79→# CONSOLE_JSON_STRING_LENGTH=255
+    80→
+    81→#===============#
+    82→# Debug Logging #
+    83→#===============#
+    84→
+    85→DEBUG_LOGGING=true
+    86→DEBUG_CONSOLE=false
+    87→# Set to false to disable file-backed Winston transports.
+    88→LOG_TO_FILE=true
+    89→# Set to true to enable agent debug logging
+    90→AGENT_DEBUG_LOGGING=false
+    91→
+    92→# Enable memory diagnostics (logs heap/RSS snapshots every 60s, auto-enabled with --inspect)
+    93→# MEM_DIAG=true
+    94→
+    95→#=============#
+    96→# Permissions #
+    97→#=============#
+    98→
+    99→# UID=1000
+   100→# GID=1000
+   101→
+   102→#==============#
+   103→# Node Options #
+   104→#==============#
+   105→
+   106→# NOTE: NODE_MAX_OLD_SPACE_SIZE is NOT recognized by Node.js directly.
+   107→# This variable is used as a build argument for Docker or CI/CD workflows,
+   108→# and is NOT used by Node.js to set the heap size at runtime.
+   109→# To configure Node.js memory, use NODE_OPTIONS, e.g.:
+   110→# NODE_OPTIONS="--max-old-space-size=6144"
+   111→# See: https://nodejs.org/api/cli.html#--max-old-space-sizesize-in-mib
+   112→NODE_MAX_OLD_SPACE_SIZE=6144
+   113→
+   114→#===============#
+   115→# Configuration #
+   116→#===============#
+   117→# Use an absolute path, a relative path, or a URL
+   118→
+   119→# CONFIG_PATH="/alternative/path/to/librechat.yaml"
+   120→
+   121→# Deployment skills are loaded read-only at startup and exposed to all users
+   122→# with the Skills capability enabled. Defaults to project root ./skill.
+   123→# DEPLOYMENT_SKILLS_DIR=./skill
+   124→
+   125→#==================#
+   126→# Langfuse Tracing #
+   127→#==================#
+   128→
+   129→# Get Langfuse API keys for your project from the project settings page: https://cloud.langfuse.com
+   130→
+   131→# LANGFUSE_PUBLIC_KEY=
+   132→# LANGFUSE_SECRET_KEY=
+   133→# LANGFUSE_BASE_URL=
+   134→
+   135→#=======================#
+   136→# OpenTelemetry Tracing #
+   137→#=======================#
+   138→
+   139→# Enables backend OpenTelemetry tracing. General backend visibility only;
+   140→# use Langfuse for GenAI-specific prompt/model observability.
+   141→# OTEL_TRACING_ENABLED=false
+   142→# OTEL_SERVICE_NAME=librechat
+   143→# OTEL_SERVICE_VERSION=
+   144→# OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+   145→# OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=
+   146→# OTEL_EXPORTER_OTLP_HEADERS=
+   147→# OTEL_TRACES_EXPORTER=otlp
+   148→# OTEL_TRACES_SAMPLER=parentbased_always_on
+   149→# OTEL_LOG_LEVEL=INFO
+   150→# OTEL_SDK_DISABLED=false
+   151→# Enable Redis command-level spans. Disabled by default to keep backend traces high-level.
+   152→# OTEL_IOREDIS_TRACING_ENABLED=false
+   153→
+   154→#===============================#
+   155→# Real User Monitoring (Browser) #
+   156→#===============================#
+   157→
+   158→# Enables browser Real User Monitoring. Disabled by default.
+   159→# Currently supports HyperDX via the browser SDK.
+   160→# RUM_ENABLED=false
+   161→# RUM_PROVIDER=hyperdx
+   162→# RUM_URL=http://localhost:4318
+   163→# RUM_SERVICE_NAME=librechat-web
+   164→# RUM_ENVIRONMENT=development
+   165→
+   166→# Public browser-token mode is suitable for OSS/self-hosted deployments.
+   167→# Treat the token as public and restrict/rate-limit ingestion in your RUM backend.
+   168→# RUM_AUTH_MODE=publicToken
+   169→# RUM_PUBLIC_TOKEN=
+   170→
+   171→# Authenticated proxy mode sends browser telemetry to this LibreChat backend first.
+   172→# The backend validates the LibreChat session, strips app auth, and forwards to the collector.
+   173→# RUM_AUTH_MODE=proxy
+   174→# RUM_PROXY_TARGET_URL=http://otel-collector:4318
+   175→# RUM_PROXY_TIMEOUT_MS=10000
+   176→
+   177→# Optional comma-separated first-party HTTPS origins/URLs that should receive traceparent headers.
+   178→# Wildcards and non-HTTPS targets are ignored.
+   179→# RUM_TRACE_PROPAGATION_TARGETS=https://api.example.com
+   180→
+   181→# Privacy defaults: replay, console capture, and full network body capture stay off.
+   182→# Console/network capture may collect sensitive browser logs, prompts, responses, or payloads.
+   183→# RUM_DISABLE_REPLAY=true
+   184→# RUM_CONSOLE_CAPTURE=false
+   185→# RUM_ADVANCED_NETWORK_CAPTURE=false
+   186→# RUM_SAMPLE_RATE=1
+   187→
+   188→#===================================================#
+   189→#                     Endpoints                     #
+   190→#===================================================#
+   191→
+   192→# ENDPOINTS=openAI,assistants,azureOpenAI,google,anthropic
+   193→
+   194→# Optional outbound proxy for server-side requests.
+   195→# PROXY applies to both HTTP and HTTPS targets. When PROXY is unset, LibreChat honors
+   196→# HTTP_PROXY, HTTPS_PROXY, and NO_PROXY/no_proxy for supported server-side clients.
+   197→PROXY=
+   198→# HTTP_PROXY=
+   199→# HTTPS_PROXY=
+   200→# NO_PROXY=
+   201→
+   202→#===================================#
+   203→# Known Endpoints - librechat.yaml  #
+   204→#===================================#
+   205→# https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints
+   206→
+   207→# ANYSCALE_API_KEY=
+   208→# APIPIE_API_KEY=
+   209→# COHERE_API_KEY=
+   210→# DEEPSEEK_API_KEY=
+   211→# DATABRICKS_API_KEY=
+   212→# FIREWORKS_API_KEY=
+   213→# GROQ_API_KEY=
+   214→# HUGGINGFACE_TOKEN=
+   215→# MISTRAL_API_KEY=
+   216→# OPENROUTER_KEY=
+   217→# PERPLEXITY_API_KEY=
+   218→# SHUTTLEAI_API_KEY=
+   219→# TOGETHERAI_API_KEY=
+   220→# UNIFY_API_KEY=
+   221→# XAI_API_KEY=
+   222→
+   223→#============#
+   224→# Anthropic  #
+   225→#============#
+   226→
+   227→ANTHROPIC_API_KEY=user_provided
+   228→# ANTHROPIC_MODELS=claude-fable-5,claude-opus-4-8,claude-opus-4-7,claude-sonnet-4-6,claude-opus-4-6,claude-opus-4-20250514,claude-3-7-sonnet-20250219,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,claude-3-opus-20240229,claude-3-sonnet-20240229,claude-3-haiku-20240307
+   229→# ANTHROPIC_REVERSE_PROXY=
+   230→
+   231→# Set to true to use Anthropic models through Google Vertex AI instead of direct API
+   232→# ANTHROPIC_USE_VERTEX=
+   233→# Supports regional locations like us-east5 and multi-region locations: us, eu, global
+   234→# ANTHROPIC_VERTEX_REGION=us-east5
+   235→
+   236→#============#
+   237→# Azure      #
+   238→#============#
+   239→
+   240→# Note: these variables are DEPRECATED
+   241→# Use the `librechat.yaml` configuration for `azureOpenAI` instead
+   242→# You may also continue to use them if you opt out of using the `librechat.yaml` configuration
+   243→
+   244→# AZURE_OPENAI_DEFAULT_MODEL=gpt-3.5-turbo # Deprecated
+   245→# AZURE_OPENAI_MODELS=gpt-3.5-turbo,gpt-4 # Deprecated
+   246→# AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE # Deprecated
+   247→# AZURE_API_KEY= # Deprecated
+   248→# AZURE_OPENAI_API_INSTANCE_NAME= # Deprecated
+   249→# AZURE_OPENAI_API_DEPLOYMENT_NAME= # Deprecated
+   250→# AZURE_OPENAI_API_VERSION= # Deprecated
+   251→# AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME= # Deprecated
+   252→# AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME= # Deprecated
+   253→
+   254→#=================#
+   255→#   AWS Bedrock   #
+   256→#=================#
+   257→# AWS Bedrock credentials
+   258→#
+   259→# Preferred for local development: configure an AWS profile in ~/.aws/config or
+   260→# ~/.aws/credentials, then set BEDROCK_AWS_PROFILE. LibreChat passes this profile
+   261→# to the AWS SDK for JavaScript credential provider chain.
+   262→#
+   263→# In deployed environments, prefer IAM roles or other short-term credentials
+   264→# discoverable by the AWS SDK default credential provider chain. If neither
+   265→# BEDROCK_AWS_PROFILE nor Bedrock-specific static credentials are set, the SDK
+   266→# uses its default provider chain. AWS-standard environment variables still
+   267→# follow AWS SDK precedence.
+   268→#
+   269→# Profiles can use IAM Identity Center, assume-role settings, or credential_process.
+   270→# If you use credential_process, secure the config file and helper command, and do
+   271→# not write secret material to stderr.
+   272→#
+   273→# AWS SDK credential chain:
+   274→# https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html
+   275→# Shared config/profile settings:
+   276→# https://docs.aws.amazon.com/sdkref/latest/guide/settings-reference.html
+   277→# credential_process security notes:
+   278→# https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sourcing-external.html
+   279→
+   280→# BEDROCK_AWS_DEFAULT_REGION=us-east-1 # A default region must be provided
+   281→
+   282→# AWS Profile
+   283→# BEDROCK_AWS_PROFILE=your-profile-name
+   284→
+   285→# Static credentials (use only if profiles or IAM roles are not suitable)
+   286→# BEDROCK_AWS_ACCESS_KEY_ID=someAccessKey
+   287→# BEDROCK_AWS_SECRET_ACCESS_KEY=someSecretAccessKey
+   288→# BEDROCK_AWS_SESSION_TOKEN=someSessionToken
+   289→
+   290→# Bedrock API key
+   291→# BEDROCK_AWS_BEARER_TOKEN=yourBedrockApiKey
+   292→
+   293→# Note: This example list is not meant to be exhaustive. If omitted, all known, supported model IDs will be included for you.
+   294→# BEDROCK_AWS_MODELS=anthropic.claude-fable-5,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-sonnet-4-6,anthropic.claude-opus-4-6-v1,anthropic.claude-3-5-sonnet-20240620-v1:0,meta.llama3-1-8b-instruct-v1:0
+   295→# Cross-region inference model IDs: us.anthropic.claude-fable-5,us.anthropic.claude-opus-4-8,us.anthropic.claude-opus-4-7,us.anthropic.claude-sonnet-4-6,us.anthropic.claude-opus-4-6-v1,global.anthropic.claude-opus-4-6-v1
+   296→
+   297→# See all Bedrock model IDs here: https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns
+   298→
+   299→# Notes on specific models:
+   300→# The following models are not support due to not supporting streaming:
+   301→# ai21.j2-mid-v1
+   302→
+   303→# The following models are not support due to not supporting conversation history:
+   304→# ai21.j2-ultra-v1, cohere.command-text-v14, cohere.command-light-text-v14
+   305→
+   306→# Claude Mythos-class models (anthropic.claude-fable-5, anthropic.claude-mythos-5) are inference-profile
+   307→# only on Bedrock — use a profile ID (e.g. us.anthropic.claude-fable-5) — and require opting into Anthropic
+   308→# data sharing via the Bedrock Data Retention API/console before they can be invoked.
+   309→
+   310→#============#
+   311→# Google     #
+   312→#============#
+   313→
+   314→GOOGLE_KEY=user_provided
+   315→
+   316→# GOOGLE_REVERSE_PROXY=
+   317→# Some reverse proxies do not support the X-goog-api-key header, uncomment to pass the API key in Authorization header instead.
+   318→# GOOGLE_AUTH_HEADER=true
+   319→
+   320→# Gemini API (AI Studio)
+   321→# GOOGLE_MODELS=gemini-3.1-pro-preview,gemini-3.1-pro-preview-customtools,gemini-3.1-flash-lite-preview,gemini-2.5-pro,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash,gemini-2.0-flash-lite
+   322→
+   323→# Vertex AI
+   324→# GOOGLE_MODELS=gemini-3.1-pro-preview,gemini-3.1-pro-preview-customtools,gemini-3.1-flash-lite-preview,gemini-2.5-pro,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash-001,gemini-2.0-flash-lite-001
+   325→
+   326→# GOOGLE_TITLE_MODEL=gemini-2.0-flash-lite-001
+   327→
+   328→# Google Cloud location for Vertex AI (used by both chat and image generation).
+   329→# Supports regional locations like us-central1 and multi-region locations: us, eu, global.
+   330→# GOOGLE_LOC=us-central1
+   331→
+   332→# Alternative region env var for Gemini Image Generation
+   333→# GOOGLE_CLOUD_LOCATION=global
+   334→
+   335→# Vertex AI Service Account Configuration
+   336→# Path to your Google Cloud service account JSON file
+   337→# GOOGLE_SERVICE_KEY_FILE=/path/to/service-account.json
+   338→
+   339→# Google Safety Settings
+   340→# NOTE: These settings apply to both Vertex AI and Gemini API (AI Studio)
+   341→#
+   342→# For Vertex AI:
+   343→# To use the BLOCK_NONE setting, you need either:
+   344→# (a) Access through an allowlist via your Google account team, or
+   345→# (b) Switch to monthly invoiced billing: https://cloud.google.com/billing/docs/how-to/invoiced-billing
+   346→#
+   347→# For Gemini API (AI Studio):
+   348→# BLOCK_NONE is available by default, no special account requirements.
+   349→#
+   350→# Available options: BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE
+   351→#
+   352→# GOOGLE_SAFETY_SEXUALLY_EXPLICIT=BLOCK_ONLY_HIGH
+   353→# GOOGLE_SAFETY_HATE_SPEECH=BLOCK_ONLY_HIGH
+   354→# GOOGLE_SAFETY_HARASSMENT=BLOCK_ONLY_HIGH
+   355→# GOOGLE_SAFETY_DANGEROUS_CONTENT=BLOCK_ONLY_HIGH
+   356→# GOOGLE_SAFETY_CIVIC_INTEGRITY=BLOCK_ONLY_HIGH
+   357→
+   358→#========================#
+   359→# Gemini Image Generation #
+   360→#========================#
+   361→
+   362→# Gemini Image Generation Tool (for Agents)
+   363→# Supports multiple authentication methods in priority order:
+   364→# 1. User-provided API key (via GUI)
+   365→# 2. GEMINI_API_KEY env var (admin-configured)
+   366→# 3. GOOGLE_KEY env var (shared with Google chat endpoint)
+   367→# 4. Vertex AI service account (via GOOGLE_SERVICE_KEY_FILE)
+   368→
+   369→# Option A: Use dedicated Gemini API key for image generation
+   370→# GEMINI_API_KEY=your-gemini-api-key
+   371→
+   372→# Vertex AI model for image generation (defaults to gemini-2.5-flash-image)
+   373→# GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
+   374→
+   375→#============#
+   376→# OpenAI     #
+   377→#============#
+   378→
+   379→OPENAI_API_KEY=user_provided
+   380→# OPENAI_MODELS=gpt-5,gpt-5-codex,gpt-5-mini,gpt-5-nano,o3-pro,o3,o4-mini,gpt-4.1,gpt-4.1-mini,gpt-4.1-nano,o3-mini,o1-pro,o1,gpt-4o,gpt-4o-mini
+   381→
+   382→DEBUG_OPENAI=false
+   383→
+   384→# TITLE_CONVO=false
+   385→# OPENAI_TITLE_MODEL=gpt-4o-mini
+   386→
+   387→# OPENAI_SUMMARIZE=true
+   388→# OPENAI_SUMMARY_MODEL=gpt-4o-mini
+   389→
+   390→# OPENAI_FORCE_PROMPT=true
+   391→
+   392→# OPENAI_REVERSE_PROXY=
+   393→
+   394→# OPENAI_ORGANIZATION=
+   395→
+   396→#====================#
+   397→#   Assistants API   #
+   398→#====================#
+   399→
+   400→ASSISTANTS_API_KEY=user_provided
+   401→# ASSISTANTS_BASE_URL=
+   402→# ASSISTANTS_MODELS=gpt-4o,gpt-4o-mini,gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+   403→
+   404→#==========================#
+   405→#   Azure Assistants API   #
+   406→#==========================#
+   407→
+   408→# Note: You should map your credentials with custom variables according to your Azure OpenAI Configuration
+   409→# The models for Azure Assistants are also determined by your Azure OpenAI configuration.
+   410→
+   411→# More info, including how to enable use of Assistants with Azure here:
+   412→# https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints/azure#using-assistants-with-azure
+   413→
+   414→CREDS_KEY=f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0
+   415→CREDS_IV=e2341419ec3dd3d19b13a1a87fafcbfb
+   416→
+   417→# Azure AI Search
+   418→#-----------------
+   419→AZURE_AI_SEARCH_SERVICE_ENDPOINT=
+   420→AZURE_AI_SEARCH_INDEX_NAME=
+   421→AZURE_AI_SEARCH_API_KEY=
+   422→
+   423→AZURE_AI_SEARCH_API_VERSION=
+   424→AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE=
+   425→AZURE_AI_SEARCH_SEARCH_OPTION_TOP=
+   426→AZURE_AI_SEARCH_SEARCH_OPTION_SELECT=
+   427→
+   428→# OpenAI Image Tools Customization
+   429→#----------------
+   430→# IMAGE_GEN_OAI_API_KEY= # Create or reuse OpenAI API key for image generation tool
+   431→# IMAGE_GEN_OAI_BASEURL= # Custom OpenAI base URL for image generation tool
+   432→# IMAGE_GEN_OAI_AZURE_API_VERSION= # Custom Azure OpenAI deployments
+   433→# IMAGE_GEN_OAI_MODEL=gpt-image-1 # OpenAI image model (e.g., gpt-image-1, gpt-image-1.5)
+   434→# IMAGE_GEN_OAI_DESCRIPTION=
+   435→# IMAGE_GEN_OAI_DESCRIPTION_WITH_FILES=Custom description for image generation tool when files are present
+   436→# IMAGE_GEN_OAI_DESCRIPTION_NO_FILES=Custom description for image generation tool when no files are present
+   437→# IMAGE_EDIT_OAI_DESCRIPTION=Custom description for image editing tool
+   438→# IMAGE_GEN_OAI_PROMPT_DESCRIPTION=Custom prompt description for image generation tool
+   439→# IMAGE_EDIT_OAI_PROMPT_DESCRIPTION=Custom prompt description for image editing tool
+   440→
+   441→# DALL·E
+   442→#----------------
+   443→# DALLE_API_KEY=
+   444→# DALLE3_API_KEY=
+   445→# DALLE2_API_KEY=
+   446→# DALLE3_SYSTEM_PROMPT=
+   447→# DALLE2_SYSTEM_PROMPT=
+   448→# DALLE_REVERSE_PROXY=
+   449→# DALLE3_BASEURL=
+   450→# DALLE2_BASEURL=
+   451→
+   452→# DALL·E (via Azure OpenAI)
+   453→# Note: requires some of the variables above to be set
+   454→#----------------
+   455→# DALLE3_AZURE_API_VERSION=
+   456→# DALLE2_AZURE_API_VERSION=
+   457→
+   458→# Flux
+   459→#-----------------
+   460→FLUX_API_BASE_URL=https://api.us1.bfl.ai
+   461→# FLUX_API_BASE_URL = 'https://api.bfl.ml';
+   462→
+   463→# Get your API key at https://api.us1.bfl.ai/auth/profile
+   464→# FLUX_API_KEY=
+   465→
+   466→# Google
+   467→#-----------------
+   468→GOOGLE_SEARCH_API_KEY=
+   469→GOOGLE_CSE_ID=
+   470→
+   471→# Stable Diffusion
+   472→#-----------------
+   473→SD_WEBUI_URL=http://host.docker.internal:7860
+   474→
+   475→# Tavily
+   476→#-----------------
+   477→TAVILY_API_KEY=
+   478→
+   479→# Traversaal
+   480→#-----------------
+   481→TRAVERSAAL_API_KEY=
+   482→
+   483→# WolframAlpha
+   484→#-----------------
+   485→WOLFRAM_APP_ID=
+   486→
+   487→# Zapier
+   488→#-----------------
+   489→ZAPIER_NLA_API_KEY=
+   490→
+   491→#==================================================#
+   492→#                      Search                      #
+   493→#==================================================#
+   494→
+   495→SEARCH=true
+   496→MEILI_NO_ANALYTICS=true
+   497→MEILI_HOST=http://0.0.0.0:7700
+   498→MEILI_MASTER_KEY=DrhYf7zENyR6AlUCKmnz0eYASOQdl6zxH7s7MKFSfFCt
+   499→
+   500→# Optional: Disable indexing, useful in a multi-node setup
+   501→# where only one instance should perform an index sync.
+   502→# MEILI_NO_SYNC=true
+   503→
+   504→#==================================================#
+   505→#          Speech to Text & Text to Speech         #
+   506→#==================================================#
+   507→
+   508→STT_API_KEY=
+   509→TTS_API_KEY=
+   510→
+   511→#==================================================#
+   512→#                        RAG                       #
+   513→#==================================================#
+   514→# More info: https://www.librechat.ai/docs/configuration/rag_api
+   515→
+   516→# RAG_API_URL=http://rag_api:8000
+   517→# RAG_OPENAI_BASEURL=
+   518→# RAG_OPENAI_API_KEY=
+   519→# RAG_USE_FULL_CONTEXT=
+   520→# EMBEDDINGS_PROVIDER=openai
+   521→# EMBEDDINGS_MODEL=text-embedding-3-small
+   522→
+   523→#===================================================#
+   524→#                    User System                    #
+   525→#===================================================#
+   526→
+   527→#========================#
+   528→# Moderation             #
+   529→#========================#
+   530→
+   531→OPENAI_MODERATION=false
+   532→OPENAI_MODERATION_API_KEY=
+   533→# OPENAI_MODERATION_REVERSE_PROXY=
+   534→
+   535→BAN_VIOLATIONS=true
+   536→BAN_DURATION=1000 * 60 * 60 * 2
+   537→BAN_INTERVAL=20
+   538→
+   539→LOGIN_VIOLATION_SCORE=1
+   540→REGISTRATION_VIOLATION_SCORE=1
+   541→CONCURRENT_VIOLATION_SCORE=1
+   542→MESSAGE_VIOLATION_SCORE=1
+   543→NON_BROWSER_VIOLATION_SCORE=20
+   544→TTS_VIOLATION_SCORE=0
+   545→STT_VIOLATION_SCORE=0
+   546→FORK_VIOLATION_SCORE=0
+   547→IMPORT_VIOLATION_SCORE=0
+   548→FILE_UPLOAD_VIOLATION_SCORE=0
+   549→
+   550→LOGIN_MAX=7
+   551→LOGIN_WINDOW=5
+   552→REGISTER_MAX=5
+   553→REGISTER_WINDOW=60
+   554→
+   555→LIMIT_CONCURRENT_MESSAGES=true
+   556→CONCURRENT_MESSAGE_MAX=2
+   557→
+   558→LIMIT_MESSAGE_IP=true
+   559→MESSAGE_IP_MAX=40
+   560→MESSAGE_IP_WINDOW=1
+   561→
+   562→LIMIT_MESSAGE_USER=false
+   563→MESSAGE_USER_MAX=40
+   564→MESSAGE_USER_WINDOW=1
+   565→
+   566→ILLEGAL_MODEL_REQ_SCORE=5
+   567→
+   568→#========================#
+   569→# Balance                #
+   570→#========================#
+   571→
+   572→# CHECK_BALANCE=false
+   573→# START_BALANCE=20000 # note: the number of tokens that will be credited after registration.
+   574→
+   575→#========================#
+   576→# Registration and Login #
+   577→#========================#
+   578→
+   579→ALLOW_EMAIL_LOGIN=true
+   580→ALLOW_REGISTRATION=true
+   581→ALLOW_SOCIAL_LOGIN=false
+   582→ALLOW_SOCIAL_REGISTRATION=false
+   583→ALLOW_PASSWORD_RESET=false
+   584→# ALLOW_ACCOUNT_DELETION=true # note: enabled by default if omitted/commented out
+   585→ALLOW_UNVERIFIED_EMAIL_LOGIN=true
+   586→
+   587→SESSION_EXPIRY=1000 * 60 * 15
+   588→REFRESH_TOKEN_EXPIRY=(1000 * 60 * 60 * 24) * 7
+   589→# Overrides the Secure attribute for session/auth cookies when set to true or false;
+   590→# leave unset to use the default NODE_ENV/DOMAIN_SERVER heuristic.
+   591→# Set to false only for HTTP-only deployments where browsers drop Secure cookies.
+   592→# SESSION_COOKIE_SECURE=false
+   593→
+   594→JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
+   595→JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
+   596→
+   597→# Discord
+   598→DISCORD_CLIENT_ID=
+   599→DISCORD_CLIENT_SECRET=
+   600→DISCORD_CALLBACK_URL=/oauth/discord/callback
+   601→
+   602→# Facebook
+   603→FACEBOOK_CLIENT_ID=
+   604→FACEBOOK_CLIENT_SECRET=
+   605→FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
+   606→
+   607→# GitHub
+   608→GITHUB_CLIENT_ID=
+   609→GITHUB_CLIENT_SECRET=
+   610→GITHUB_CALLBACK_URL=/oauth/github/callback
+   611→# GitHub Enterprise
+   612→# GITHUB_ENTERPRISE_BASE_URL=
+   613→# GITHUB_ENTERPRISE_USER_AGENT=
+   614→
+   615→# Google
+   616→GOOGLE_CLIENT_ID=
+   617→GOOGLE_CLIENT_SECRET=
+   618→GOOGLE_CALLBACK_URL=/oauth/google/callback
+   619→
+   620→# Apple
+   621→APPLE_CLIENT_ID=
+   622→APPLE_TEAM_ID=
+   623→APPLE_KEY_ID=
+   624→APPLE_PRIVATE_KEY_PATH=
+   625→APPLE_CALLBACK_URL=/oauth/apple/callback
+   626→
+   627→# OpenID
+   628→OPENID_CLIENT_ID=
+   629→OPENID_CLIENT_SECRET=
+   630→OPENID_ISSUER=
+   631→OPENID_SESSION_SECRET=
+   632→OPENID_SCOPE="openid profile email"
+   633→OPENID_CALLBACK_URL=/oauth/openid/callback
+   634→# Admin panel SSO uses ${DOMAIN_SERVER}/api/admin/oauth/openid/callback as the
+   635→# OpenID provider redirect URI.
+   636→OPENID_REQUIRED_ROLE=
+   637→OPENID_REQUIRED_ROLE_TOKEN_KIND=
+   638→OPENID_REQUIRED_ROLE_PARAMETER_PATH=
+   639→OPENID_ADMIN_ROLE=
+   640→OPENID_ADMIN_ROLE_PARAMETER_PATH=
+   641→OPENID_ADMIN_ROLE_TOKEN_KIND=
+   642→# Generic OpenID role sync maps non-admin IdP roles/groups to one LibreChat role.
+   643→# ADMIN cannot be assigned by generic role sync; use OPENID_ADMIN_ROLE for admin elevation.
+   644→# Role priority is ordered from most important to least important.
+   645→OPENID_ROLE_SYNC_ENABLED=false
+   646→OPENID_ROLE_SYNC_API_ENABLED=false
+   647→OPENID_ROLE_SYNC_SOURCE=id
+   648→OPENID_ROLE_SYNC_CLAIM=
+   649→OPENID_ROLE_SYNC_ROLE_PRIORITY=
+   650→# Fallback is authoritative when configured: if no priority role matches, this role is assigned.
+   651→OPENID_ROLE_SYNC_FALLBACK_ROLE=
+   652→# Set to determine which user info property returned from OpenID Provider to store as the User's username
+   653→OPENID_USERNAME_CLAIM=
+   654→# Set to determine which user info property returned from OpenID Provider to store as the User's name
+   655→OPENID_NAME_CLAIM=
+   656→# Set to determine which user info claim to use as the email/identifier for user matching (e.g., "upn" for Entra ID)
+   657→# When not set, defaults to: email -> preferred_username -> upn
+   658→OPENID_EMAIL_CLAIM=
+   659→# Optional audience parameter for OpenID authorization requests and JWT validation.
+   660→# If comma-separated values are provided, JWT validation accepts all values and
+   661→# authorization requests use the first non-empty value.
+   662→OPENID_AUDIENCE=
+   663→# Optional audience parameter for OpenID refresh token requests.
+   664→# Some providers, such as Auth0 custom APIs, require this to preserve
+   665→# the intended access-token audience during refresh. Usually matches OPENID_AUDIENCE.
+   666→OPENID_REFRESH_AUDIENCE=
+   667→
+   668→OPENID_BUTTON_LABEL=
+   669→OPENID_IMAGE_URL=
+   670→# Set to true to automatically redirect to the OpenID provider when a user visits the login page
+   671→# This will bypass the login form completely for users, only use this if OpenID is your only authentication method
+   672→OPENID_AUTO_REDIRECT=false
+   673→# Set to true to use PKCE (Proof Key for Code Exchange) for OpenID authentication.
+   674→# For public clients (no client secret), leave OPENID_CLIENT_SECRET empty and set this to true.
+   675→OPENID_USE_PKCE=false
+   676→#Set to true to reuse openid tokens for authentication management instead of using the mongodb session and the custom refresh token.
+   677→OPENID_REUSE_TOKENS=
+   678→#Max age a reused OpenID session token is served before LibreChat forces an IdP refresh. Default 900000 ms (15 min).
+   679→#Accepts an arithmetic expression like SESSION_EXPIRY (e.g. 60 * 60 * 24 * 1000 for 24h).
+   680→#Raise toward the IdP access-token lifetime when the IdP revokes the previous access token on refresh, so a still-valid token
+   681→#is not rotated/revoked out from under downstream consumers (e.g. MCP servers that introspect the bearer).
+   682→#When OPENID_REUSE_TOKENS=true, the OpenID session cookie maxAge is extended to at least this value.
+   683→OPENID_REUSE_MAX_SESSION_AGE_MS=
+   684→#By default, signing key verification results are cached in order to prevent excessive HTTP requests to the JWKS endpoint.
+   685→#If a signing key matching the kid is found, this will be cached and the next time this kid is requested the signing key will be served from the cache.
+   686→#Default is true.
+   687→OPENID_JWKS_URL_CACHE_ENABLED=
+   688→OPENID_JWKS_URL_CACHE_TIME= # 600000 ms eq to 10 minutes leave empty to disable caching
+   689→#Set to true to trigger token exchange flow to acquire access token for the userinfo endpoint.
+   690→OPENID_ON_BEHALF_FLOW_FOR_USERINFO_REQUIRED=
+   691→OPENID_ON_BEHALF_FLOW_USERINFO_SCOPE="user.read" # example for Scope Needed for Microsoft Graph API
+   692→# Set to true to use the OpenID Connect end session endpoint for logout
+   693→OPENID_USE_END_SESSION_ENDPOINT=
+   694→# URL to redirect to after OpenID logout (defaults to ${DOMAIN_CLIENT}/login)
+   695→OPENID_POST_LOGOUT_REDIRECT_URI=
+   696→# Maximum logout URL length before using logout_hint instead of id_token_hint (default: 2000)
+   697→OPENID_MAX_LOGOUT_URL_LENGTH=
+   698→
+   699→#========================#
+   700→# SharePoint Integration #
+   701→#========================#
+   702→# Requires Entra ID (OpenID) authentication to be configured
+   703→
+   704→# Enable SharePoint file picker in chat and agent panels
+   705→# ENABLE_SHAREPOINT_FILEPICKER=true
+   706→
+   707→# SharePoint tenant base URL (e.g., https://yourtenant.sharepoint.com)
+   708→# SHAREPOINT_BASE_URL=https://yourtenant.sharepoint.com
+   709→
+   710→# Microsoft Graph API And SharePoint scopes for file picker
+   711→# SHAREPOINT_PICKER_SHAREPOINT_SCOPE==https://yourtenant.sharepoint.com/AllSites.Read
+   712→# SHAREPOINT_PICKER_GRAPH_SCOPE=Files.Read.All
+   713→#========================#
+   714→
+   715→# SAML
+   716→# Note: If OpenID is enabled, SAML authentication will be automatically disabled.
+   717→SAML_ENTRY_POINT=
+   718→SAML_ISSUER=
+   719→SAML_CERT=
+   720→SAML_CALLBACK_URL=/oauth/saml/callback
+   721→SAML_SESSION_SECRET=
+   722→
+   723→# Attribute mappings (optional)
+   724→SAML_EMAIL_CLAIM=
+   725→SAML_USERNAME_CLAIM=
+   726→SAML_GIVEN_NAME_CLAIM=
+   727→SAML_FAMILY_NAME_CLAIM=
+   728→SAML_PICTURE_CLAIM=
+   729→SAML_NAME_CLAIM=
+   730→
+   731→# Logint buttion settings (optional)
+   732→SAML_BUTTON_LABEL=
+   733→SAML_IMAGE_URL=
+   734→
+   735→# Whether the SAML Response should be signed.
+   736→# - If "true", the entire `SAML Response` will be signed.
+   737→# - If "false" or unset, only the `SAML Assertion` will be signed (default behavior).
+   738→# SAML_USE_AUTHN_RESPONSE_SIGNED=
+   739→
+   740→
+   741→#===============================================#
+   742→# Microsoft Graph API / Entra ID Integration  #
+   743→#===============================================#
+   744→
+   745→# Enable Entra ID people search integration in permissions/sharing system
+   746→# When enabled, the people picker will search both local database and Entra ID
+   747→USE_ENTRA_ID_FOR_PEOPLE_SEARCH=false
+   748→
+   749→# When enabled, entra id groups owners will be considered as members of the group
+   750→ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS=false
+   751→
+   752→# Microsoft Graph API scopes needed for people/group search
+   753→# Default scopes provide access to user profiles and group memberships
+   754→OPENID_GRAPH_SCOPES=User.Read,People.Read,GroupMember.Read.All
+   755→
+   756→# LDAP
+   757→LDAP_URL=
+   758→LDAP_BIND_DN=
+   759→LDAP_BIND_CREDENTIALS=
+   760→LDAP_USER_SEARCH_BASE=
+   761→#LDAP_SEARCH_FILTER="mail="
+   762→LDAP_CA_CERT_PATH=
+   763→# LDAP_TLS_REJECT_UNAUTHORIZED=
+   764→# LDAP_STARTTLS=
+   765→# LDAP_LOGIN_USES_USERNAME=true
+   766→# LDAP_ID=
+   767→# LDAP_USERNAME=
+   768→# LDAP_EMAIL=
+   769→# LDAP_FULL_NAME=
+   770→
+   771→#========================#
+   772→# Email Password Reset   #
+   773→#========================#
+   774→
+   775→EMAIL_SERVICE=
+   776→EMAIL_HOST=
+   777→EMAIL_PORT=25
+   778→EMAIL_ENCRYPTION=
+   779→EMAIL_ENCRYPTION_HOSTNAME=
+   780→EMAIL_ALLOW_SELFSIGNED=
+   781→# Leave both empty for SMTP servers that do not require authentication
+   782→EMAIL_USERNAME=
+   783→EMAIL_PASSWORD=
+   784→EMAIL_FROM_NAME=
+   785→EMAIL_FROM=noreply@librechat.ai
+   786→
+   787→#========================#
+   788→#      Mailgun API       #
+   789→#========================#
+   790→
+   791→# MAILGUN_API_KEY=your-mailgun-api-key
+   792→# MAILGUN_DOMAIN=mg.yourdomain.com
+   793→# EMAIL_FROM=noreply@yourdomain.com
+   794→# EMAIL_FROM_NAME="LibreChat"
+   795→
+   796→# # Optional: For EU region
+   797→# MAILGUN_HOST=https://api.eu.mailgun.net
+   798→
+   799→#========================#
+   800→# Firebase CDN           #
+   801→#========================#
+   802→
+   803→FIREBASE_API_KEY=
+   804→FIREBASE_AUTH_DOMAIN=
+   805→FIREBASE_PROJECT_ID=
+   806→FIREBASE_STORAGE_BUCKET=
+   807→FIREBASE_MESSAGING_SENDER_ID=
+   808→FIREBASE_APP_ID=
+   809→
+   810→#========================#
+   811→# S3 AWS Bucket          #
+   812→#========================#
+   813→
+   814→AWS_ENDPOINT_URL=
+   815→AWS_ACCESS_KEY_ID=
+   816→AWS_SECRET_ACCESS_KEY=
+   817→AWS_REGION=
+   818→AWS_BUCKET_NAME=
+   819→# Required for path-style S3-compatible providers (MinIO, Hetzner, Backblaze B2, etc.)
+   820→# that don't support virtual-hosted-style URLs (bucket.endpoint). Not needed for AWS S3.
+   821→# AWS_FORCE_PATH_STYLE=false
+   822→# Required for CloudFront signed cookies and signed download URLs
+   823→# CLOUDFRONT_KEY_PAIR_ID=
+   824→# CLOUDFRONT_PRIVATE_KEY=
+   825→
+   826→#========================#
+   827→# Azure Blob Storage     #
+   828→#========================#
+   829→
+   830→AZURE_STORAGE_CONNECTION_STRING=
+   831→AZURE_STORAGE_PUBLIC_ACCESS=false
+   832→AZURE_CONTAINER_NAME=files
+   833→
+   834→#========================#
+   835→# Shared Links           #
+   836→#========================#
+   837→
+   838→ALLOW_SHARED_LINKS=true
+   839→# Allows unauthenticated access to shared links. Defaults to false (auth required) if not set.
+   840→ALLOW_SHARED_LINKS_PUBLIC=false
+   841→# Snapshot files referenced by a shared chat so viewers can preview/download them through
+   842→# the shared link (instead of the owner's file ACL). Enabled by default; overrides the
+   843→# `interface.sharedLinks.snapshotFiles` yaml setting when set.
+   844→# SHARED_LINKS_SNAPSHOT_FILES=true
+   845→
+   846→#==============================#
+   847→# Static File Cache Control    #
+   848→#==============================#
+   849→
+   850→# Leave commented out to use defaults: 1 day (86400 seconds) for s-maxage and 2 days (172800 seconds) for max-age
+   851→# NODE_ENV must be set to production for these to take effect
+   852→# STATIC_CACHE_MAX_AGE=172800
+   853→# STATIC_CACHE_S_MAX_AGE=86400
+   854→
+   855→# If you have another service in front of your LibreChat doing compression, disable express based compression here
+   856→# DISABLE_COMPRESSION=true
+   857→
+   858→# Serve precompressed Brotli versions of static app assets when available.
+   859→# ENABLE_STATIC_ASSET_BROTLI=true
+   860→
+   861→# If you have gzipped version of uploaded image images in the same folder, this will enable gzip scan and serving of these images
+   862→# Note: The images folder will be scanned on startup and a ma kept in memory. Be careful for large number of images.
+   863→# ENABLE_IMAGE_OUTPUT_GZIP_SCAN=true
+   864→
+   865→#===================================================#
+   866→#                        UI                         #
+   867→#===================================================#
+   868→
+   869→APP_TITLE=LibreChat
+   870→# CUSTOM_FOOTER="My custom footer"
+   871→HELP_AND_FAQ_URL=https://librechat.ai
+   872→
+   873→# SHOW_BIRTHDAY_ICON=true
+   874→
+   875→# Google tag manager id
+   876→#ANALYTICS_GTM_ID=user provided google tag manager id
+   877→
+   878→# limit conversation file imports to a certain number of bytes in size to avoid the container
+   879→# maxing out memory limitations by unremarking this line and supplying a file size in bytes
+   880→# such as the below example of 250 mib
+   881→# CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES=262144000
+   882→
+   883→
+   884→#===============#
+   885→# REDIS Options #
+   886→#===============#
+   887→
+   888→# Enable Redis for caching and session storage
+   889→# USE_REDIS=true
+   890→# Enable Redis for resumable LLM streams (defaults to USE_REDIS value if not set)
+   891→# Set to false to use in-memory storage for streams while keeping Redis for other caches
+   892→# USE_REDIS_STREAMS=true
+   893→
+   894→# Single Redis instance
+   895→# REDIS_URI=redis://127.0.0.1:6379
+   896→
+   897→# Redis cluster (multiple nodes)
+   898→# REDIS_URI=redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003
+   899→# Enable Redis cluster mode when connecting to a cluster through a single URI
+   900→# USE_REDIS_CLUSTER=true
+   901→
+   902→# Managed Redis services with a single endpoint may shard keys internally and reject multi-key DEL
+   903→# Set to true to delete keys individually and avoid CROSSSLOT errors while keeping single-node mode
+   904→# REDIS_CLUSTER_SAFE_DELETE=true
+   905→
+   906→# Redis with TLS/SSL encryption and CA certificate
+   907→# REDIS_URI=rediss://127.0.0.1:6380
+   908→# REDIS_CA=/path/to/ca-cert.pem
+   909→
+   910→# Elasticache may need to use an alternate dnsLookup for TLS connections.  see "Special Note: Aws Elasticache Clusters with TLS" on this webpage: https://www.npmjs.com/package/ioredis
+   911→# Enable alternative dnsLookup for redis
+   912→# REDIS_USE_ALTERNATIVE_DNS_LOOKUP=true
+   913→
+   914→# Redis authentication (if required)
+   915→# REDIS_USERNAME=your_redis_username
+   916→# REDIS_PASSWORD=your_redis_password
+   917→
+   918→# Redis key prefix configuration
+   919→# Use environment variable name for dynamic prefix (recommended for cloud deployments)
+   920→# REDIS_KEY_PREFIX_VAR=K_REVISION
+   921→# Or use static prefix directly
+   922→# REDIS_KEY_PREFIX=librechat
+   923→
+   924→# Redis connection limits
+   925→# REDIS_MAX_LISTENERS=40
+   926→
+   927→# Redis ping interval in seconds (0 = disabled, >0 = enabled)
+   928→# When set to a positive integer, Redis clients will ping the server at this interval to keep connections alive
+   929→# When unset or 0, no pinging is performed (recommended for most use cases)
+   930→# REDIS_PING_INTERVAL=300
+   931→
+   932→# Force specific cache namespaces to use in-memory storage even when Redis is enabled
+   933→# Comma-separated list of CacheKeys
+   934→# Defaults to CONFIG_STORE,APP_CONFIG so YAML-derived config stays per-container (safe for blue/green deployments)
+   935→# Set to empty string to force all namespaces through Redis: FORCED_IN_MEMORY_CACHE_NAMESPACES=
+   936→# FORCED_IN_MEMORY_CACHE_NAMESPACES=CONFIG_STORE,APP_CONFIG
+   937→
+   938→# Leader Election Configuration (for multi-instance deployments with Redis)
+   939→# Duration in seconds that the leader lease is valid before it expires (default: 25)
+   940→# LEADER_LEASE_DURATION=25
+   941→# Interval in seconds at which the leader renews its lease (default: 10)
+   942→# LEADER_RENEW_INTERVAL=10
+   943→# Maximum number of retry attempts when renewing the lease fails (default: 3)
+   944→# LEADER_RENEW_ATTEMPTS=3
+   945→# Delay in seconds between retry attempts when renewing the lease (default: 0.5)
+   946→# LEADER_RENEW_RETRY_DELAY=0.5
+   947→
+   948→#==================================================#
+   949→#                      Others                      #
+   950→#==================================================#
+   951→#   You should leave the following commented out   #
+   952→
+   953→# NODE_ENV=
+   954→
+   955→# E2E_USER_EMAIL=
+   956→# E2E_USER_PASSWORD=
+   957→
+   958→#=====================================================#
+   959→#                  Cache Headers                      #
+   960→#=====================================================#
+   961→#   Headers that control caching of the index.html    #
+   962→#   Default configuration prevents caching to ensure  #
+   963→#   users always get the latest version. Customize    #
+   964→#   only if you understand caching implications.      #
+   965→
+   966→# INDEX_CACHE_CONTROL=no-cache, no-store, must-revalidate
+   967→# INDEX_PRAGMA=no-cache
+   968→# INDEX_EXPIRES=0
+   969→
+   970→# no-cache: Forces validation with server before using cached version
+   971→# no-store: Prevents storing the response entirely
+   972→# must-revalidate: Prevents using stale content when offline
+   973→
+   974→#=====================================================#
+   975→#                  OpenWeather                        #
+   976→#=====================================================#
+   977→OPENWEATHER_API_KEY=
+   978→
+   979→#======================#
+   980→# Web Search           #
+   981→#======================#
+   982→
+   983→# Note: All of the following variable names can be customized.
+   984→# Omit values to allow user to provide them.
+   985→
+   986→# For more information on configuration values, see:
+   987→# https://librechat.ai/docs/features/web_search
+   988→
+   989→# Search Provider (Required)
+   990→# SERPER_API_KEY=your_serper_api_key
+   991→
+   992→# Tavily (Search Provider and/or Scraper)
+   993→# TAVILY_API_KEY=your_tavily_api_key
+   994→
+   995→# Scraper (Required)
+   996→# FIRECRAWL_API_KEY=your_firecrawl_api_key
+   997→# Optional: Custom Firecrawl API URL
+   998→# FIRECRAWL_API_URL=your_firecrawl_api_url
+   999→
+  1000→# Reranker (Required)
+  1001→# JINA_API_KEY=your_jina_api_key
+  1002→# or
+  1003→# COHERE_API_KEY=your_cohere_api_key
+  1004→
+  1005→#======================#
+  1006→# MCP Configuration    #
+  1007→#======================#
+  1008→
+  1009→# Treat 401/403 responses as OAuth requirement when no oauth metadata found
+  1010→# MCP_OAUTH_ON_AUTH_ERROR=true
+  1011→
+  1012→# Timeout for OAuth detection requests in milliseconds
+  1013→# MCP_OAUTH_DETECTION_TIMEOUT=5000
+  1014→
+  1015→# How long to wait (ms) for a user to complete the OAuth flow before timing out (default: 10 minutes)
+  1016→# MCP_OAUTH_HANDLING_TIMEOUT=600000
+  1017→
+  1018→# TTL (ms) for OAuth flow state; must outlive MCP_OAUTH_HANDLING_TIMEOUT (default: 15 minutes)
+  1019→# MCP_OAUTH_FLOW_TTL=900000
+  1020→
+  1021→# Cache connection status checks for this many milliseconds to avoid expensive verification
+  1022→# MCP_CONNECTION_CHECK_TTL=60000
+  1023→
+  1024→# Max bytes allowed in a non-GET streamable HTTP MCP response before rejecting it.
+  1025→# Set to 0 to disable. Default: 16777216 (16 MiB)
+  1026→# MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES=16777216
+  1027→
+  1028→# Max bytes allowed in a single SSE line for non-GET streamable HTTP MCP responses.
+  1029→# Set to 0 to disable. Default: 5242880 (5 MiB)
+  1030→# MCP_STREAMABLE_HTTP_MAX_LINE_BYTES=5242880
+  1031→
+  1032→# Skip code challenge method validation (e.g., for AWS Cognito that supports S256 but doesn't advertise it)
+  1033→# When set to true, forces S256 code challenge even if not advertised in .well-known/openid-configuration
+  1034→# MCP_SKIP_CODE_CHALLENGE_CHECK=false
+  1035→
+  1036→# Circuit breaker: max connect/disconnect cycles before tripping (per server)
+  1037→# MCP_CB_MAX_CYCLES=7
+  1038→
+  1039→# Circuit breaker: sliding window (ms) for counting cycles
+  1040→# MCP_CB_CYCLE_WINDOW_MS=45000
+  1041→
+  1042→# Circuit breaker: cooldown (ms) after the cycle breaker trips
+  1043→# MCP_CB_CYCLE_COOLDOWN_MS=15000
+  1044→
+  1045→# Circuit breaker: max consecutive failed connection rounds before backoff
+  1046→# MCP_CB_MAX_FAILED_ROUNDS=3
+  1047→
+  1048→# Circuit breaker: sliding window (ms) for counting failed rounds
+  1049→# MCP_CB_FAILED_WINDOW_MS=120000
+  1050→
+  1051→# Circuit breaker: base backoff (ms) after failed round threshold is reached
+  1052→# MCP_CB_BASE_BACKOFF_MS=30000
+  1053→
+  1054→# Circuit breaker: max backoff cap (ms) for exponential backoff
+  1055→# MCP_CB_MAX_BACKOFF_MS=300000
+  1056→

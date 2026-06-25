@@ -1,0 +1,1793 @@
+     1→# تقرير تحليل وإصلاح آلية وضع المحادثة والـ Agent في منصة Ai Norx
+     2→
+     3→> **المشروع:** `Ai-Agnet` (LibreChat fork) — منصة Ai Norx
+     4→> **تاريخ الفحص:** 2026-06-25 (محدّث بعد سحب آخر 5 commits حتى `d37b160`)
+     5→> **نوع التقرير:** تحليل فقط (لا تعديل على الكود) + خطة إصلاح متكاملة
+     6→> **النطاق:** Frontend (React/Recoil) + Backend (Node/Express/MongoDB) + DB Schemas + Deployment
+     7→
+     8→---
+     9→
+    10→## فهرس المحتويات
+    11→
+    12→1. [ملخص تنفيذي](#1-ملخص-تنفيذي)
+    13→2. [الآلية الحالية الكاملة (الفرونت إند)](#2-الآلية-الحالية-الكاملة-الفرونت-إند)
+    14→3. [الآلية الحالية الكاملة (الباك إند)](#3-الآلية-الحالية-الكاملة-الباك-إند)
+    15→4. [نماذج قاعدة البيانات الحالية](#4-نماذج-قاعدة-البيانات-الحالية)
+    16→5. [آلية إدارة المزودين والنماذج (Providers/Models)](#5-آلية-إدارة-المزودين-والنماذج-providersmodels)
+    17→6. [تحليل ادعاء المستخدم: "تحديث الـ Agent عند كل محادثة جديدة"](#6-تحليل-ادعاء-المستخدم-تحديث-الـ-agent-عند-كل-محادثة-جديدة)
+    18→7. [المشاكل المرصودة (11 مشكلة)](#7-المشاكل-المرصودة-11-مشكلة)
+    19→8. [خطة الإصلاح المتكاملة](#8-خطة-الإصلاح-المتكاملة)
+    20→   - [المرحلة 1: تبسيط زر الوضع العلوي](#المرحلة-1-تبسيط-زر-الوضع-العلوي)
+    21→   - [المرحلة 2: حذف Marketplace وتعزيز Agent Builder](#المرحلة-2-حذف-marketplace-وتعزيز-agent-builder)
+    22→   - [المرحلة 3: إضافة حقل "افتراضي" للـ Agent](#المرحلة-3-إضافة-حقل-افتراضي-للـ-agent)
+    23→   - [المرحلة 4: واجهة إدارة المزودين الجديدة](#المرحلة-4-واجهة-إدارة-المزودين-الجديدة)
+    24→   - [المرحلة 5: إصلاح مشكلة تحديث الـ Agent](#المرحلة-5-إصلاح-مشكلة-تحديث-الـ-agent)
+    25→9. [خطة تنفيذ مرتبة بالأولوية](#9-خطة-تنفيذ-مرتبة-بالأولوية)
+    26→10. [المخاطر والاعتبارات](#10-المخاطر-والاعتبارات)
+    27→11. [ملخص التغييرات المطلوبة لكل ملف](#11-ملخص-التغييرات-المطلوبة-لكل-ملف)
+    28→12. [ملحق: مراجعة آخر تحديث (commit 18c2036)](#12-ملحق-مراجعة-آخر-تحديث-commit-18c2036)
+    29→
+    30→---
+    31→
+    32→## 1. ملخص تنفيذي
+    33→
+    34→منصة Ai Norx مبنية على LibreChat مع تخصيصات عربية لإجبار جميع المستخدمين العاديين (USER) على استخدام وكيل مركزي واحد باسم `agent_primary`. التحكم بهذا الوكيل يتم حالياً عبر:
+    35→
+    36→- **سطر ثابت في الكود** (`PRIMARY_AGENT_ID = 'agent_primary'`) متكرر في 4 ملفات على الأقل (Frontend + Backend).
+    37→- **سكربت CLI يدوي** (`config/setup-primary-agent.js`) يكتب تعليمات عربية hardcoded ويعيد كتابتها عند كل تشغيل، مما يلغي أي تعديلات يجرها الـ Admin من الواجهة.
+    38→- **لا يوجد حقل `isDefault`** في مخطط `Agent` ولا يوجد API endpoint لتعيين وكيل افتراضي.
+    39→- **لا توجد قاعدة بيانات للمزودين/النماذج** — كل شيء في `librechat.yaml`.
+    40→
+    41→**النتيجة الحالية:**
+    42→- زر الوضع العلوي للـ Admin = `<ModelSelector>` كامل (specs + endpoints + models + agents) — مخالف للمطلوب.
+    43→- زر الوضع العلوي للـ USER = نص ثابت "Ai Norx" غير قابل للنقر — مخالف للمطلوب (المطلوب: خياران Agent Mode / Chat لكلا الطرفين).
+    44→- واجهة Marketplace للـ Admin = browse-only بلا زر "إضافة"، والإضافة الحقيقية مدفونة في Side Panel منفصل.
+    45→- لا يوجد مكان لتعيين وكيل افتراضي من الواجهة.
+    46→- لا توجد واجهة لإضافة مزودين/نماذج عبر الـ UI (YAML فقط).
+    47→- مشكلة "تحديث الـ Agent عند فتح محادثة" لم تُثبت كـ per-conversation، لكن يوجد خطر حقيقي من `setup-primary-agent.js` الذي يُعاد تشغيله عند كل deploy ويمحى تعديلات الـ Admin.
+    48→
+    49→التقرير التالي يقدم خطة إصلاح كاملة على 5 مراحل مع مخططات schemas جديدة و endpoints جديدة وتغييرات ملفات دقيقة.
+    50→
+    51→---
+    52→
+    53→## 2. الآلية الحالية الكاملة (الفرونت إند)
+    54→
+    55→### 2.1 زر الوضع العلوي — المكون الأساسي
+    56→
+    57→**الملف:** `client/src/components/Chat/Header.tsx` (السطور 95–172)
+    58→
+    59→```tsx
+    60→const { user } = useAuthContext();
+    61→const isAdmin = user?.role === SystemRoles.ADMIN;
+    62→
+    63→// ...
+    64→
+    65→{isAdmin ? (
+    66→  <ModelSelector startupConfig={startupConfig} />
+    67→) : (
+    68→  <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-primary">
+    69→    <Bot className="h-4 w-4" />
+    70→    <span>Ai Norx</span>
+    71→  </div>
+    72→)}
+    73→```
+    74→
+    75→**التحليل:**
+    76→- **Admin:** يرى `<ModelSelector>` كامل — يعرض: ModelSpecs + Endpoints + Models + Agents (كل المزودين وكل الموديلات وكل الـ Agents المنشئين).
+    77→- **USER:** يرى badge ثابت "Ai Norx" غير قابل للنقر إطلاقاً. لا يوجد خيار للتبديل بين Agent Mode و Chat.
+    78→- **المشكلة 1:** مخالف للمطلوب الذي ينص على أن **كلا الطرفين** يرى زراً يحتوي على خيارين فقط: `Agent Mode` أو `Chat`.
+    79→
+    80→### 2.2 تدفق إنشاء محادثة جديدة (New Conversation)
+    81→
+    82→**نقطة الدخول:** `client/src/components/Nav/NewChat.tsx`
+    83→
+    84→**السلسلة:**
+    85→1. `useNewConvo().newConversation()` من `client/src/hooks/Conversations/useNewConvo.ts`
+    86→2. يستدعي `switchToConversation()` → `getDefaultEndpoint()` → `buildDefaultConvo()`
+    87→3. `setConversation()` على Recoil atom
+    88→4. URL push إلى `/c/new`
+    89→5. لا يتم إطلاق أي API POST حتى يرسل المستخدم أول رسالة
+    90→
+    91→**النقاط الحرجة:**
+    92→
+    93→#### أ) `client/src/utils/getDefaultEndpoint.ts` (الأسطر 60–76)
+    94→
+    95→```ts
+    96→const getDefaultEndpoint = ({ convoSetup, endpointsConfig, userRole }) => {
+    97→  // ── Central-agent policy ──
+    98→  // USER role can only use the 'agents' endpoint.
+    99→  if (userRole === SystemRoles.USER && endpointsConfig?.agents) {
+   100→    return 'agents' as EModelEndpoint;
+   101→  }
+   102→  return (
+   103→    getEndpointFromSetup(convoSetup, endpointsConfig) ||
+   104→    getEndpointFromLocalStorage(endpointsConfig) ||
+   105→    getDefinedEndpoint(endpointsConfig)
+   106→  );
+   107→};
+   108→```
+   109→
+   110→**المشكلة 2:** منطق USER hardcode يعيد `'agents'` دائماً — يلغي أي اختيار.
+   111→
+   112→#### ب) `client/src/utils/buildDefaultConvo.ts` (الأسطر 17، 92–104)
+   113→
+   114→```ts
+   115→const PRIMARY_AGENT_ID = 'agent_primary';
+   116→
+   117→// ...
+   118→
+   119→if (userRole === SystemRoles.USER && isAgentsEndpoint(endpoint)) {
+   120→  defaultConvo.agent_id = PRIMARY_AGENT_ID;
+   121→  defaultConvo.model = PRIMARY_AGENT_ID;
+   122→  defaultConvo.tools = undefined;
+   123→} else {
+   124→  clearModelForNonEphemeralAgent(defaultConvo);
+   125→  defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
+   126→}
+   127→```
+   128→
+   129→**المشكلة 3:** `PRIMARY_AGENT_ID` مكتوب كـ string literal ولا يُجلب من الـ DB. الـ Admin لا يستطيع تغييره من الواجهة.
+   130→
+   131→### 2.3 بوابة الصلاحيات (Role Gating) — ثلاث طبقات
+   132→
+   133→| الطبقة | الموقع | الآلية |
+   134→|---|---|---|
+   135→| 1. Hard check | `Header.tsx:120`, `BadgeRow.tsx` | `user?.role === SystemRoles.ADMIN` |
+   136→| 2. Permission bits | `useHasAccess({ permissionType, permission })` | يقرأ `roles[user.role].permissions[type][perm]` من `AuthContext` |
+   137→| 3. Hardcoded policy | `getDefaultEndpoint.ts:67`, `buildDefaultConvo.ts:95` | `if (userRole === USER) force 'agents' + 'agent_primary'` |
+   138→
+   139→**المشكلة 4:** التحقق موزع على 3 طبقات غير متناسقة — صعب الصيانة ويفتح ثغرات.
+   140→
+   141→### 2.4 جلب قائمة الـ Agents
+   142→
+   143→- `useListAgentsQuery` (في `data-provider/Agents/queries.ts`) يجلب كل الـ Agents عبر cursor pagination.
+   144→- المخزن في `AgentsMapContext` (عالمي لكل التطبيق).
+   145→- صلاحية `VIEW` مطلوبة.
+   146→- في `ModelSelectorContext` يُستخدم لعرض قائمة الـ Agents في القائمة المنسدلة للـ ModelSelector.
+   147→
+   148→### 2.5 واجهة إدارة الـ Agents الحالية (Marketplace + Agent Builder)
+   149→
+   150→#### Marketplace (`/agents`)
+   151→- **الملف:** `client/src/components/Agents/Marketplace.tsx`
+   152→- **السلوك:** Browse-only — يعرض hero + SearchBar + CategoryTabs + AgentGrid.
+   153→- النقر على Agent يفتح `AgentDetailContent` — dialog **للعرض فقط** مع أزرار: Pin / Copy Link / Start Chat.
+   154→- **لا يوجد زر "Add New Agent" داخل الـ Marketplace.**
+   155→- `MarketplaceAdminSettings` button موجود لكنه `// TODO: Remove this once we have a better way to handle admin settings` — يفتح dialog صلاحيات per-role، ليس إدارة Agents.
+   156→
+   157→#### Agent Builder (Side Panel)
+   158→- **الموقع:** زر تنقل في `useSideNavLinks.ts:99-112` — gated بـ `AGENTS.USE` + `AGENTS.CREATE`.
+   159→- **الملف الرئيسي:** `client/src/components/SidePanel/Agents/AgentPanel.tsx`
+   160→- هو المكان الوحيد الذي يحتوي زر "Create New Agent" (السطر 504-517).
+   161→- يفتح الـ form مباشرة في وضع "إنشاء جديد"، مع dropdown في الأعلى لاختيار Agent موجود لتعديله.
+   162→
+   163→**المشكلة 5:** الإدارة منقسمة بين مكانين منفصلين:
+   164→- Marketplace = browse فقط.
+   165→- Agent Builder = create/edit فقط.
+   166→- لا يوجد قائمة موحدة "List-first" كما هو مطلوب.
+   167→
+   168→#### حقول النموذج الحالية (`AgentConfig.tsx` + `ModelPanel.tsx` + `AdvancedPanel.tsx`)
+   169→| الحقل | النوع | ملاحظات |
+   170→|---|---|---|
+   171→| avatar | file | اختياري |
+   172→| name | string (256) | مطلوب |
+   173→| description | string (512) | اختياري |
+   174→| category | enum | افتراضي "general" |
+   175→| instructions | textarea + variables | نص التعليمات |
+   176→| provider + model | select | مطلوب، يفتح ModelPanel |
+   177→| model_parameters | dynamic object | temperature, top_p, ... |
+   178→| capabilities | flags | code, web_search, file_context, artifacts, file_search |
+   179→| mcpServers | multi-select | أدوات MCP |
+   180→| skills_enabled + skills[] | flag + list | المهارات |
+   181→| tools & actions | list | أدوات مخصصة |
+   182→| support_contact.{name,email} | object | معلومات الدعم |
+   183→| advanced | object | recursion_limit, end_after_tools, hide_sequential_outputs, subagents/edges |
+   184→| **isDefault** | ❌ غير موجود | **مطلوب إضافته** |
+   185→
+   186→### 2.6 الحالة (State Management)
+   187→
+   188→- **Recoil** (ليس Jotai كما يتوقع البعض) — `client/src/store/families.ts`.
+   189→- حالة الـ conversation mode مشتقة من `endpoint === 'agents'` أو `agent_id != null` — **لا يوجد boolean صريح `isAgentMode`**.
+   190→- الـ ephemeral agent state لكل conversation في `store/agents.ts` (`ephemeralAgentByConvoId`).
+   191→- React Query للبيانات المُ persists: `QueryKeys.agents`, `QueryKeys.marketplaceAgents`, `QueryKeys.agent` + id, `QueryKeys.agentCategories`.
+   192→
+   193→### 2.7 ملخص ما يحدث عند فتح محادثة جديدة (Frontend)
+   194→
+   195→```
+   196→[User clicks "New Chat"]
+   197→       │
+   198→       ▼
+   199→NewChat.tsx → useNewConvo().newConversation()
+   200→       │
+   201→       ▼
+   202→getDefaultEndpoint({ userRole, endpointsConfig, convoSetup })
+   203→       │
+   204→       ├── if USER → return 'agents' (hardcoded)
+   205→       └── if ADMIN → try setup → try localStorage → first defined
+   206→       │
+   207→       ▼
+   208→buildDefaultConvo({ endpoint, userRole, ... })
+   209→       │
+   210→       ├── if USER + agents endpoint:
+   211→       │     agent_id = 'agent_primary' (hardcoded string)
+   212→       │     model = 'agent_primary'
+   213→       │     tools = undefined
+   214→       └── else: use lastSelectedModel/tools
+   215→       │
+   216→       ▼
+   217→setConversation() ← Recoil atom
+   218→       │
+   219→       ▼
+   220→URL → /c/new
+   221→       │
+   222→       ▼
+   223→(no API call yet — wait for first user message)
+   224→```
+   225→
+   226→---
+   227→
+   228→## 3. الآلية الحالية الكاملة (الباك إند)
+   229→
+   230→### 3.1 مخطط الـ Endpoints الخاص بالـ Agents
+   231→
+   232→| الطريقة | المسار | الوظيفة | الصلاحية |
+   233→|---|---|---|---|
+   234→| GET | `/api/agents` | قائمة بكل الـ Agents (pagination) | `AGENTS.USE` + `canAccessAgentResource` |
+   235→| GET | `/api/agents/:id` | تفاصيل Agent واحد | `AGENTS.USE` + ACL |
+   236→| POST | `/api/agents` | إنشاء Agent جديد | `AGENTS.CREATE` |
+   237→| PATCH | `/api/agents/:id` | تعديل Agent | `AGENTS.EDIT` |
+   238→| DELETE | `/api/agents/:id` | حذف Agent | `AGENTS.DELETE` |
+   239→| POST | `/api/agents/:agent_id/avatar` | رفع صورة | `AGENTS.EDIT` |
+   240→| POST | `/api/agents/:id/revert` | التراجع عن نسخة | `AGENTS.EDIT` |
+   241→| POST | `/api/agents/:agent_id/actions` | إضافة action | `AGENTS.EDIT` |
+   242→| DELETE | `/api/agents/:agent_id/actions/:action_id` | حذف action | `AGENTS.EDIT` |
+   243→| POST | `/api/agents/chat/` | تشغيل محادثة Agent | `AGENTS.USE` + `canAccessAgentFromBody` |
+   244→| GET | `/api/agents/categories` | فئات الـ Agents | `AGENTS.USE` |
+   245→| POST | `/api/agents/v1/*` | OpenAI-compatible | API key (`requireRemoteAgentAuth`) |
+   246→| POST | `/api/agents/v1/responses` | Open Responses | API key |
+   247→
+   248→### 3.2 مخطط الـ Endpoints الخاص بالمحادثات (`/api/convos`)
+   249→
+   250→| الطريقة | المسار | الوظيفة |
+   251→|---|---|---|
+   252→| GET | `/api/convos/:conversationId` | جلب محادثة |
+   253→| POST | `/api/convos/:conversationId/messages` | إضافة رسالة |
+   254→| GET | `/api/convos` | قائمة المحادثات |
+   255→| DELETE | `/api/convos/:conversationId` | حذف |
+   256→| PATCH | `/api/convos/:conversationId` | تعديل |
+   257→| POST | `/api/convos/:conversationId/messages/:messageId/edit` | تعديل رسالة |
+   258→| POST | `/api/convos/:conversationId/export` | تصدير |
+   259→| POST | `/api/convos/:conversationId/files` | رفع ملف |
+   260→| GET | `/api/convos/:conversationId/files` | سرد الملفات |
+   261→| DELETE | `/api/convos/:conversationId/files/:fileId` | حذف ملف |
+   262→| POST | `/api/convos/:conversationId/tags` | إضافة tag |
+   263→
+   264→**ملاحظة مهمة:** لا يوجد endpoint باسم `/api/convos/new` أو ما يشير إلى "إنشاء محادثة جديدة". المحادثات تُنشأ ضمنياً عند إرسال أول رسالة إلى `/api/agents/chat/` مع `conversationId: "new"`.
+   265→
+   266→### 3.3 التدفق البرمجي عند بدء محادثة Agent جديدة
+   267→
+   268→```
+   269→POST /api/agents/chat/ { conversationId: "new", ... }
+   270→       │
+   271→       ▼
+   272→[Middleware chain]
+   273→  requireJwtAuth
+   274→  → generateCheckAccess(AGENTS, USE)
+   275→  → canAccessAgentFromBody   ← هنا يقع الـ USER hardcode
+   276→  → validateConvoAccess
+   277→  → buildEndpointOption
+   278→       │
+   279→       ▼
+   280→ResumableAgentController
+   281→       │
+   282→       ▼
+   283→initializeClient → initializeAgent (packages/api/src/agents/initialize.ts)
+   284→       │
+   285→       ├── agent = await getAgent({ id: agent_id })  ← lean() plain JS object
+   286→       ├── agent.instructions = replaceSpecialVars(agent.instructions, ...)
+   287→       │   ↑ هذا تعديل على object في الذاكرة فقط، لا يُكتب للـ DB
+   288→       └── بناء LangChain agent مع الأدوات المطلوبة
+   289→       │
+   290→       ▼
+   291→client.sendMessage(userMessage)
+   292→       │
+   293→       ▼
+   294→saveMessage + saveConvo  ← يكتب في: conversations, messages, toolcalls, transactions, balances
+   295→```
+   296→
+   297→### 3.4 إجبار الـ USER على `agent_primary`
+   298→
+   299→**الملف:** `api/server/middleware/agents/canAccessAgentFromBody.js` (الأسطر 172–183)
+   300→
+   301→```js
+   302→// USER role forced to agent_primary
+   303→if (req.user.role === SystemRoles.USER && body.agent_id !== 'agent_primary') {
+   304→  return res.status(403).json({ error: 'User role can only use agent_primary' });
+   305→}
+   306→```
+   307→
+   308→**المشكلة 6:** نفس الـ hardcode موجود على الباك إند — إذا غُيِّر `PRIMARY_AGENT_ID` على الفرونت إند سيظل الباك إند يرفض.
+   309→
+   310→### 3.5 جميع استدعاءات `db.updateAgent` في الكود (6 مواقع — لا واحد منها في تدفق المحادثة)
+   311→
+   312→| # | الملف | السطر | السبب |
+   313→|---|---|---|---|
+   314→| 1 | `api/server/controllers/agents/v1.js` | 696 | `PATCH /api/agents/:id` — تعديل صريح من Admin |
+   315→| 2 | `api/server/controllers/agents/v1.js` | 1006 | `GET /api/agents/` — تحديث avatar URL فقط (`skipVersioning: true`) |
+   316→| 3 | `api/server/controllers/agents/v1.js` | 1148 | `POST /api/agents/:agent_id/avatar` — رفع avatar |
+   317→| 4 | `api/server/controllers/agents/v1.js` | 1248 | `POST /api/agents/:id/revert` — تراجع عن نسخة |
+   318→| 5 | `api/server/routes/agents/actions.js` | 204, 290 | إضافة/حذف action |
+   319→| 6 | **`config/setup-primary-agent.js`** | **187** | **سكربت CLI يدوي** — upsert كامل لـ `agent_primary` مع تعليمات عربية hardcoded |
+   320→
+   321→### 3.6 الطبقات الوسيطة (Middleware) للتحقق من الدور
+   322→
+   323→| Middleware | الوظيفة |
+   324→|---|---|
+   325→| `requireJwtAuth` | التحقق من JWT |
+   326→| `generateCheckAccess(AGENTS, USE/CREATE)` | فحص permission bits |
+   327→| `canAccessAgentResource` | فحص ACL على المورد المحدد |
+   328→| `canAccessAgentFromBody` | فحص ACL + إجبار USER على `agent_primary` |
+   329→| `validateConvoAccess` | التحقق من ملكية المحادثة |
+   330→| `buildEndpointOption` | بناء خيارات الـ endpoint |
+   331→| `requireRemoteAgentAuth` | للـ OpenAI-compatible (API key) |
+   332→
+   333→---
+   334→
+   335→## 4. نماذج قاعدة البيانات الحالية
+   336→
+   337→### 4.1 مخطط Agent
+   338→
+   339→**الملف:** `packages/data-schemas/src/schema/agent.ts` (الأسطر 4–142)
+   340→
+   341→| الحقل | النوع | ملاحظات |
+   342→|---|---|---|
+   343→| `id` | String (unique, indexed per tenant) | e.g. `'agent_primary'` |
+   344→| `provider` | String (required) | اسم المزود |
+   345→| `model` | String (required) | اسم الموديل |
+   346→| `name` | String | |
+   347→| `description` | String | |
+   348→| `instructions` | String | نص التعليمات |
+   349→| `tools` | [String] | قائمة الأدوات |
+   350→| `skills` | [String] | قائمة المهارات |
+   351→| `mcpServerNames` | [String] (indexed) | cache لأسماء سيرفرات MCP |
+   352→| `model_parameters` | Object | temperature, top_p, ... |
+   353→| `conversation_starters` | [String] | |
+   354→| `category` | String | |
+   355→| `access_level` | Number | |
+   356→| `is_promoted` | Boolean (default false, indexed) | flag للتسويق في Marketplace — **ليس default** |
+   357→| `avatar` | Object | { filepath, source, ... } |
+   358→| `author` | ObjectId (ref User) | |
+   359→| `authorName` | String | |
+   360→| `end_after_tools` | Boolean | |
+   361→| `hide_sequential_outputs` | Boolean | |
+   362→| `recursion_limit` | Number | |
+   363→| `projectIds` | [ObjectId] | |
+   364→| `support_contact` | { name, email } | |
+   365→| `agent_state` | String | |
+   366→| `position` | Number | ترتيب العرض |
+   367→| `tools` | [String] | |
+   368→| `execution_state` | String | |
+   369→| `creation_strategy` | String | |
+   370→| `overrides` | Object | |
+   371→| `metadata` | Object | |
+   372→| `version` | Number | versioning |
+   373→| `tags` | [String] | |
+   374→
+   375→**❌ حقل مفقود:** `isDefault` أو `default_for_role` — لا يوجد أي مكان لتعيين Agent كافتراضي.
+   376→
+   377→### 4.2 مخطط Conversation
+   378→
+   379→**الملف:** `packages/data-schemas/src/schema/convo.ts` (الأسطر 5–69)
+   380→
+   381→الحقول المتعلقة بالموضوع:
+   382→| الحقل | النوع | الوصف |
+   383→|---|---|---|
+   384→| `agent_id` | String | معرّف الـ Agent المستخدم |
+   385→| `endpoint` | String | نوع الـ endpoint (e.g. `'agents'`, `'openAI'`) |
+   386→| `model` | String | اسم الموديل أو Agent ID (LibreChat convention) |
+   387→| `instructions` | String | snapshot من تعليمات الـ Agent وقت الإنشاء |
+   388→| `spec` | String | اسم الـ ModelSpec |
+   389→| `tools` | [String] | الأدوات المفعّلة |
+   390→| `conversationPreset` (spread) | - | 50+ حقل من `defaults.ts` |
+   391→
+   392→**Indexes:**
+   393→- `(conversationId, user, tenantId)` — فريد
+   394→- MeiliSearch index
+   395→- TTL index
+   396→
+   397→### 4.3 مخطط User
+   398→
+   399→**الملف:** `packages/data-schemas/src/schema/user.ts` (الأسطر 26–167)
+   400→
+   401→| الحقل | النوع | الوصف |
+   402→|---|---|---|
+   403→| `role` | String (default: `SystemRoles.USER`) | قيمتان فقط: `ADMIN`, `USER` |
+   404→| `email`, `name`, `username`, `password` | - | |
+   405→| `emailVerified` | Boolean | |
+   406→
+   407→**ملاحظة:** الصلاحيات الـ RBAC الفعلية في collection منفصلة باسم `Role` (`packages/data-schemas/src/schema/role.ts`) تُSeed عبر `db.seedDatabase()`.
+   408→
+   409→### 4.4 مخططات أخرى مرتبطة
+   410→
+   411→| المخطط | الملف | الوصف |
+   412→|---|---|---|
+   413→| `Role` | `schema/role.ts` | أذونات RBAC (USE, CREATE, EDIT, DELETE, SHARE per permission type) |
+   414→| `Action` | `schema/action.ts` | أدوات OpenAPI المعرّفة، مرتبطة بـ agent_id |
+   415→| `Preset` | `schema/preset.ts` | يحتوي على `defaultPreset: Boolean` — **لكن غير مستخدم للـ Agents** |
+   416→| `Skill` | `schema/skill.ts` | 236-line schema، مرجع بواسطة `agent.skills` |
+   417→| `MCPUserServer` | `schema/mcpServer.ts` | سيرفرات MCP المنشأة من المستخدم |
+   418→| `AgentApiKey` | `schema/agentApiKey.ts` | مفاتيح API للوصول البرمجي |
+   419→| `AgentCategory` | `schema/agentCategory.ts` | فئات seeded |
+   420→| `SystemGrant` | `schema/systemGrant.ts` | منح قدرات على مستوى المنصة |
+   421→
+   422→---
+   423→
+   424→## 5. آلية إدارة المزودين والنماذج (Providers/Models)
+   425→
+   426→### 5.1 الحالة الحالية: YAML-based بالكامل
+   427→
+   428→**الملف:** `librechat.yaml` (60 سطر — ملف الإنتاج الفعلي)
+   429→
+   430→```yaml
+   431→version: 1.3.13
+   432→interface:
+   433→  customWelcome: { ... }   # نص ترحيب عربي
+   434→  endpoints: true
+   435→  modelSelect: true
+   436→  presets: true
+   437→  ...
+   438→webSearch: { ... tavily ... }
+   439→memory: { ... built-in, Arabic instructions ... }
+   440→mcpServers: { github, fetch, filesystem }   # stdio
+   441→endpoints:
+   442→  agents:
+   443→    recursionLimit: 50
+   444→    capabilities: { ... }
+   445→  custom:
+   446→    - name: OpenCodez
+   447→      apiKey: ${OPENCODEZ_API_KEY}
+   448→      baseURL: https://.../api/opencodez/v1
+   449→      models:
+   450→        default: [...]
+   451→        fetch: [...]
+   452→        list: [deepseek-v4-flash-free, ...]
+   453→```
+   454→
+   455→**المرجع الكامل:** `librechat.example.yaml` (887 سطر — كل الخيارات الممكنة).
+   456→
+   457→### 5.2 كيف تُحمّل المزودون في الـ Backend
+   458→
+   459→**الملف:** `api/server/services/Config/EndpointService.js`
+   460→
+   461→- يدمج: (a) endpoints مبنية على env vars (مثل `OPENAI_API_KEY`) + (b) `endpoints.custom[]` من YAML.
+   462→- لا توجد collection في DB للمزودين.
+   463→- الـ overrides الوحيدة المتاحة عبر `/api/admin/config/:principalType/:principalId/fields` — وهي scalar/boolean فقط، لا يمكنها إضافة عناصر جديدة لمصفوفة `endpoints.custom`.
+   464→
+   465→### 5.3 مكان وجود `default: true`
+   466→
+   467→| المكان | النوع | ملاحظات |
+   468→|---|---|---|
+   469→| `TModelSpec.default` / `softDefault` | zod schema | **YAML فقط** — `packages/data-provider/src/models.ts:13-83` |
+   470→| `IPreset.defaultPreset` | DB Boolean | غير مرتبط بالـ Agents |
+   471→| `Agent.is_promoted` | DB Boolean | للتسويق، **ليس default routing** |
+   472→| `PRIMARY_AGENT_ID = 'agent_primary'` | string literal | مكتوب في 4 ملفات على الأقل |
+   473→
+   474→**المشكلة 7:** لا يوجد أي مسار رسمي لتعيين Agent كافتراضي عبر UI — كل شيء يعتمد على convention ثابت.
+   475→
+   476→---
+   477→
+   478→## 6. تحليل ادعاء المستخدم: "تحديث الـ Agent عند كل محادثة جديدة"
+   479→
+   480→### 6.1 ما قاله المستخدم بالضبط
+   481→
+   482→> "كل مره يفتح المستخدم او الادمن محادثه جديده في وضع الagent المنصه برمجتها حاليا تقوم بتحديث معلومات الagent هذا في قاعده البيانات حسب التعليمات المبرمجه مسبقا وهذا خاطئ"
+   483→
+   484→### 6.2 نتيجة الفحص الفعلي
+   485→
+   486→**بعد تتبع كامل التدفق:** لا يوجد كود في الباك إند يكتب على collection `agents` أثناء إنشاء محادثة جديدة. الكتابات الوحيدة على `agents` هي:
+   487→1. `PATCH /api/agents/:id` (تعديل صريح من Admin).
+   488→2. تحديث avatar URL فقط (`skipVersioning: true`).
+   489→3. سكربت CLI `setup-primary-agent.js`.
+   490→
+   491→### 6.3 التفسيرات الممكنة
+   492→
+   493→| التفسير | الاحتمالية | الدليل |
+   494→|---|---|---|
+   495→| **(أ) السكربت `setup-primary-agent.js` يُعاد تشغيله عند كل deploy** | عالية جداً | السكربت upsert كامل لـ `agent_primary` مع التعليمات العربية hardcoded (الأسطر 46–109) — كل تعديلات الـ Admin على هذا الـ Agent تُمحى. المستخدم قد يلاحظ هذا بعد كل deploy ويعتقد أنه يحدث "عند فتح محادثة" |
+   496→| **(ب) snapshot التعليمات في Conversation** | متوسطة | مخطط `Conversation` يحتوي على حقل `instructions` (snapshot) — قد يُنسخ من الـ Agent عند بدء المحادثة. هذا ليس "تحديث للـ Agent" لكنه قد يُفسر خطأً |
+   497→| **(ج) `agent.instructions = replaceSpecialVars(...)` في `initialize.ts:1110`** | منخفضة | هذا على object `.lean()` مؤقت — لا يُكتب في DB. لكن لو كان الكود قديماً قبل `.lean()` فقد كان يُعدّل المخطط فعلياً |
+   498→| **(د) سكربت update آخر في CI/CD لم نرَه** | منخفضة | لم نجد `setup-primary` في `Dockerfile`, `railway.json`, `package.json scripts`, `.github/workflows` |
+   499→
+   500→### 6.4 التوصية
+   501→
+   502→1. **إضافة logging مؤقت** في `updateAgent` (`packages/data-schemas/src/methods/agent.ts:426`):
+   503→   ```js
+   504→   console.log('[updateAgent]', searchParameter, Object.keys(updateData), new Error().stack);
+   505→   ```
+   506→   ثم إعادة تشغيل السيرفر وفتح محادثة جديدة ورؤية ما يُطبع.
+   507→
+   508→2. **فحص سجل الـ deploys على Railway** للتحقق من تكرار تشغيل `setup-primary-agent.js`.
+   509→
+   510→3. **بغض النظر عن السبب الفعلي**، الحل النهائي مطلوب: يجب ألا يُعاد كتابة الـ Agent الافتراضي تلقائياً بأي تعليمات hardcoded بعد إنشائه أول مرة.
+   511→
+   512→---
+   513→
+   514→## 7. المشاكل المرصودة (11 مشكلة)
+   515→
+   516→### المشكلة 1: زر الوضع العلوي للـ Admin يعرض الكل
+   517→- **الموقع:** `client/src/components/Chat/Header.tsx:135-136`
+   518→- **الوصف:** `<ModelSelector>` للـ Admin يعرض: كل الـ specs، كل الـ endpoints، كل الموديلات، كل الـ Agents بأسمائها.
+   519→- **المطلوب:** خياران فقط: `Agent Mode` أو `Chat`.
+   520→
+   521→### المشكلة 2: زر الوضع العلوي للـ USER غير قابل للنقر
+   522→- **الموقع:** `client/src/components/Chat/Header.tsx:138-141`
+   523→- **الوصف:** badge ثابت `<Bot /> Ai Norx` بدون أي تفاعل.
+   524→- **المطلوب:** نفس زر الـ Admin بخيارين `Agent Mode` / `Chat` (مع تقييد سلوكي داخلي).
+   525→
+   526→### المشكلة 3: `PRIMARY_AGENT_ID` مكتوب كـ string literal
+   527→- **المواقع:**
+   528→  - `client/src/utils/buildDefaultConvo.ts:17`
+   529→  - `config/setup-primary-agent.js:37`
+   530→  - `api/server/middleware/agents/canAccessAgentFromBody.js` (مدمج في الشرط)
+   531→- **الوصف:** الـ Admin لا يستطيع تغيير الـ Agent الافتراضي من الواجهة.
+   532→- **المطلوب:** قراءة ديناميكية من DB.
+   533→
+   534→### المشكلة 4: بوابة الصلاحيات موزعة على 3 طبقات
+   535→- Hardcoded role checks في `Header.tsx`, `BadgeRow.tsx`.
+   536→- Permission bits عبر `useHasAccess`.
+   537→- Hardcoded policy في `getDefaultEndpoint.ts`, `buildDefaultConvo.ts`, `canAccessAgentFromBody.js`.
+   538→- **النتيجة:** صعب الصيانة، يفتح ثغرات، يكسر مبدأ single source of truth.
+   539→
+   540→### المشكلة 5: واجهة Marketplace غير ضرورية ومنقسمة
+   541→- Marketplace (`/agents`) = browse-only بلا زر إضافة، يعرض بطاقات Agents للعرض فقط.
+   542→- Agent Builder = create/edit في Side Panel منفصل.
+   543→- **المطلوب:** حذف Marketplace بالكامل بكل مكوناته، وتعزيز Agent Builder في Side Panel ليصبح نقطة الإدارة الوحيدة (قائمة Agents موجودة + زر إضافة + النقر على Agent يفتح التعديل).
+   544→
+   545→### المشكلة 6: hardcode الـ USER على `agent_primary` مكرر في 3 طبقات
+   546→- `getDefaultEndpoint.ts:67` (frontend).
+   547→- `buildDefaultConvo.ts:95` (frontend).
+   548→- `canAccessAgentFromBody.js:172` (backend).
+   549→- **النتيجة:** تغيير الـ Agent الافتراضي يتطلب تعديل 3 أماكن متزامنة.
+   550→
+   551→### المشكلة 7: لا يوجد حقل `isDefault` في مخطط Agent
+   552→- **الموقع:** `packages/data-schemas/src/schema/agent.ts`
+   553→- **النتيجة:** لا يمكن للـ Admin تعيين Agent كافتراضي عبر UI.
+   554→
+   555→### المشكلة 8: لا توجد واجهة لإضافة المزودين/النماذج
+   556→- **الموقع:** كل شيء في `librechat.yaml` (config file).
+   557→- **النتيجة:** الـ Admin لا يستطيع إضافة مزود جديد أو موديل جديد إلا بتعديل YAML + إعادة deploy.
+   558→
+   559→### المشكلة 9: سكربت `setup-primary-agent.js` يمحى تعديلات الـ Admin
+   560→- **الموقع:** `config/setup-primary-agent.js:186-192`
+   561→- **الوصف:** `db.updateAgent({ id: PRIMARY_AGENT_ID }, agentData)` — يكتب التعليمات العربية hardcoded بالكامل.
+   562→- **النتيجة:** أي تعديل على `agent_primary` من UI يُفقد عند إعادة تشغيل السكربت (سواء يدوياً أو في CI).
+   563→
+   564→### المشكلة 10: `MarketplaceAdminSettings` هو TODO معلق
+   565→- **الموقع:** `client/src/components/Agents/Marketplace.tsx`
+   566→- **الوصف:** تعليق `// TODO: Remove this once we have a better way to handle admin settings` — يفتح dialog صلاحيات per-role فقط، ليس إدارة Agents.
+   567→- **النتيجة:** تجربة Admin مربكة.
+   568→
+   569→### المشكلة 11: حالة الـ conversation mode غير صريحة
+   570→- **الموقع:** `client/src/store/families.ts`
+   571→- **الوصف:** الـ mode مشتق من `endpoint === 'agents'` أو `agent_id != null` — لا يوجد boolean صريح `isAgentMode`.
+   572→- **النتيجة:** منطق التبديل بين Agent Mode و Chat Mode معقد وعرضة للأخطاء.
+   573→
+   574→---
+   575→
+   576→## 8. خطة الإصلاح المتكاملة
+   577→
+   578→### المرحلة 1: تبسيط زر الوضع العلوي
+   579→
+   580→#### 1.1 إنشاء مكون جديد `ModeSwitcher`
+   581→
+   582→**الملف الجديد:** `client/src/components/Chat/ModeSwitcher.tsx`
+   583→
+   584→```tsx
+   585→import { useRecoilState } from 'recoil';
+   586→import { Bot, MessageSquare } from 'lucide-react';
+   587→import { EModelEndpoint } from 'librechat-data-provider';
+   588→import { cn } from '~/utils';
+   589→import store from '~/store';
+   590→
+   591→type Mode = 'agent' | 'chat';
+   592→
+   593→function ModeSwitcher() {
+   594→  const [endpoint, setEndpoint] = useRecoilState(store.conversationEndpointByIndex(0));
+   595→  const mode: Mode = endpoint === EModelEndpoint.agents ? 'agent' : 'chat';
+   596→
+   597→  const handleSwitch = (newMode: Mode) => {
+   598→    const newEndpoint = newMode === 'agent' ? EModelEndpoint.agents : EModelEndpoint.custom;
+   599→    setEndpoint(newEndpoint);
+   600→    // سيُستدعى buildDefaultConvo تلقائياً عبر تأثير الـ endpoint
+   601→  };
+   602→
+   603→  return (
+   604→    <div className="flex items-center gap-1 rounded-xl border border-border-light bg-surface-secondary p-1">
+   605→      <button
+   606→        onClick={() => handleSwitch('agent')}
+   607→        className={cn(
+   608→          'flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition',
+   609→          mode === 'agent' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary',
+   610→        )}
+   611→      >
+   612→        <Bot className="h-4 w-4" />
+   613→        <span>Agent Mode</span>
+   614→      </button>
+   615→      <button
+   616→        onClick={() => handleSwitch('chat')}
+   617→        className={cn(
+   618→          'flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition',
+   619→          mode === 'chat' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary',
+   620→        )}
+   621→      >
+   622→        <MessageSquare className="h-4 w-4" />
+   623→        <span>Chat</span>
+   624→      </button>
+   625→    </div>
+   626→  );
+   627→}
+   628→
+   629→export default ModeSwitcher;
+   630→```
+   631→
+   632→#### 1.2 استبدال المنطق في `Header.tsx`
+   633→
+   634→**التغيير في:** `client/src/components/Chat/Header.tsx`
+   635→
+   636→> ⚠️ **ملاحظة مهمة بعد آخر تحديث (commit `18c2036`):** الملف أصبح يحتوي على مكونين إضافيين يجب الحفاظ عليهما أثناء التعديل:
+   637→> 1. `SandboxSessionCheck` (الأسطر 17–127) — popup يظهر عند فتح محادثة جديدة ووجود sandbox نشط سابق، يعرض خيارين: متابعة نفس الـ sandbox أو إنهاؤه وبدء جديد
+   638→> 2. `WorkspaceButton` (الأسطر 129–287) — زر عرض ملفات الـ sandbox مع auto-refresh كل 5 ثوانٍ، عرض sandbox ID، file icons، badge عدّاد، click-outside overlay
+   639→>
+   640→> الجزء الذي يجب تغييره فقط هو **الأسطر 333–340** داخل دالة `Header()` — أي التفرع بين `ModelSelector` (للأدمن) والـ badge الثابت (للمستخدم).
+   641→
+   642→**قبل (الأسطر 333–340 في النسخة المحدّثة):**
+   643→```tsx
+   644→{isAdmin ? (
+   645→  <ModelSelector startupConfig={startupConfig} />
+   646→) : (
+   647→  <div className="flex items-center gap-2 rounded-lg border ...">
+   648→    <Bot className="h-4 w-4" />
+   649→    <span>Ai Norx</span>
+   650→  </div>
+   651→)}
+   652→```
+   653→
+   654→**بعد:**
+   655→```tsx
+   656→<ModeSwitcher />
+   657→```
+   658→
+   659→**الفائدة:**
+   660→- كلا الدورين (ADMIN + USER) يرى نفس الزر بخيارين فقط.
+   661→- لا تظهر أسماء الـ Agents.
+   662→- لا تظهر أسماء المزودين أو الموديلات.
+   663→- الـ USER عند اختيار "Agent Mode" يُسلك تلقائياً إلى الـ Agent الافتراضي (انظر المرحلة 3).
+   664→- الـ USER عند اختيار "Chat" يُسلك إلى endpoint `custom` الافتراضي (انظر المرحلة 4).
+   665→
+   666→**محاذير يجب الالتزام بها أثناء التعديل:**
+   667→- **عدم حذف** `<SandboxSessionCheck />` الذي يُrender في السطر 321 (في أعلى الـ `Header()` return). هذا المكون مستقل عن الـ mode switcher ويجب أن يبقى يعمل في كلا الوضعين.
+   668→- **عدم لمس** `<WorkspaceButton />` الذي يُrender في السطر 344 — وظيفته عرض ملفات الـ sandbox مستقلة عن الـ mode switcher، ويجب أن يبقى متاحاً في كلا الوضعين.
+   669→- **التحقق قبل حذف import `ModelSelector`** (السطر 6) — لا يزال يُستخدم في منطق `PresetsMenu` (السطر 341: `interfaceConfig.presets === true && interfaceConfig.modelSelect && isAdmin`). إما إبقاؤه أو إعادة تقييم منطق `PresetsMenu` (هل يبقى للأدمن فقط؟).
+   670→- **`isAdmin` variable** (السطر 316) لا يزال يُستخدم في السطر 341 — لا تحذفه ما لم تُعِد تقييم `PresetsMenu` أيضاً.
+   671→
+   672→#### 1.3 إزالة `ModelSelector` من الـ Header (مع الاحتفاظ به للأنشطة الأخرى)
+   673→- `ModelSelector` سيُستخدم فقط في **واجهة إدارة الـ Agents** (لاختيار provider/model عند إنشاء/تعديل Agent).
+   674→- يُحذف من `Header.tsx` نهائياً.
+   675→
+   676→#### 1.4 تحديث `getDefaultEndpoint.ts`
+   677→
+   678→**التغيير في:** `client/src/utils/getDefaultEndpoint.ts` (الأسطر 65–76)
+   679→
+   680→**قبل:**
+   681→```ts
+   682→if (userRole === SystemRoles.USER && endpointsConfig?.agents) {
+   683→  return 'agents' as EModelEndpoint;
+   684→}
+   685→return (
+   686→  getEndpointFromSetup(convoSetup, endpointsConfig) ||
+   687→  getEndpointFromLocalStorage(endpointsConfig) ||
+   688→  getDefinedEndpoint(endpointsConfig)
+   689→);
+   690→```
+   691→
+   692→**بعد:**
+   693→```ts
+   694→// الوضع الافتراضي = Agent Mode للجميع
+   695→if (endpointsConfig?.agents) {
+   696→  return 'agents' as EModelEndpoint;
+   697→}
+   698→return (
+   699→  getEndpointFromSetup(convoSetup, endpointsConfig) ||
+   700→  getEndpointFromLocalStorage(endpointsConfig) ||
+   701→  getDefinedEndpoint(endpointsConfig)
+   702→);
+   703→```
+   704→
+   705→**ملاحظة:** الـ mode switcher سيتحكم في التبديل بعد ذلك، لا حاجة لـ hardcode دور الـ USER.
+   706→
+   707→#### 1.5 تحديث `buildDefaultConvo.ts`
+   708→
+   709→**التغيير في:** `client/src/utils/buildDefaultConvo.ts` (الأسطر 92–104)
+   710→
+   711→**قبل:**
+   712→```ts
+   713→if (userRole === SystemRoles.USER && isAgentsEndpoint(endpoint)) {
+   714→  defaultConvo.agent_id = PRIMARY_AGENT_ID;
+   715→  defaultConvo.model = PRIMARY_AGENT_ID;
+   716→  defaultConvo.tools = undefined;
+   717→} else { ... }
+   718→```
+   719→
+   720→**بعد:**
+   721→```ts
+   722→// جلب الـ Agent الافتراضي من DB (عبر React Query hook يمرره المُستدعي)
+   723→if (isAgentsEndpoint(endpoint)) {
+   724→  const defaultAgentId = defaultAgentIdFromDb ?? 'agent_primary'; // fallback مؤقت
+   725→  defaultConvo.agent_id = defaultAgentId;
+   726→  defaultConvo.model = defaultAgentId;
+   727→  defaultConvo.tools = undefined;
+   728→} else {
+   729→  clearModelForNonEphemeralAgent(defaultConvo);
+   730→  defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
+   731→}
+   732→```
+   733→
+   734→**ملاحظة:** يجب تمرير `defaultAgentIdFromDb` من المُستدعي بعد جلبه عبر hook `useGetDefaultAgent()` (يُنشأ في المرحلة 3).
+   735→
+   736→---
+   737→
+   738→### المرحلة 2: حذف Marketplace وتعزيز Agent Builder
+   739→
+   740→#### 2.1 حذف Marketplace بالكامل بكل مكوناته
+   741→
+   742→**السبب:** Marketplace في وضعه الحالي هو browse-only لا يخدم غرض الإدارة. بدلاً من إعادة هيكلته، سيتم حذفه بالكامل وتوحيد إدارة الـ Agents في **Agent Builder الموجود في Side Panel** — وهو المكان الذي يدعم بالفعل إنشاء وتعديل الـ Agents عبر dropdown لاختيار Agent موجود.
+   743→
+   744→**الملفات المراد حذفها (12 ملف):**
+   745→
+   746→| المسار | الوصف |
+   747→|---|---|
+   748→| `client/src/components/Agents/Marketplace.tsx` | الصفحة الرئيسية للـ Marketplace |
+   749→| `client/src/components/Agents/MarketplaceAdminSettings.tsx` | إعدادات الـ Marketplace (TODO معلق أصلاً) |
+   750→| `client/src/components/Agents/MarketplaceContext.tsx` | React Context للـ Marketplace |
+   751→| `client/src/components/Agents/AgentCard.tsx` | بطاقة عرض Agent في الـ Marketplace |
+   752→| `client/src/components/Agents/AgentDetail.tsx` | تفاصيل Agent (dialog عرض فقط) |
+   753→| `client/src/components/Agents/AgentDetailContent.tsx` | محتوى تفاصيل Agent |
+   754→| `client/src/components/Agents/AgentGrid.tsx` | شبكة عرض الـ Agents |
+   755→| `client/src/components/Agents/VirtualizedAgentGrid.tsx` | شبكة افتراضية للأداء |
+   756→| `client/src/components/Agents/CategoryTabs.tsx` | تبويبات الفئات |
+   757→| `client/src/components/Agents/SearchBar.tsx` | شريط البحث |
+   758→| `client/src/components/Agents/SmartLoader.tsx` | Loader ذكي |
+   759→| `client/src/components/Agents/ErrorDisplay.tsx` | عرض الأخطاء |
+   760→| `client/src/components/Agents/tests/*` | كل اختبارات الـ Marketplace |
+   761→
+   762→**التغييرات في ملفات أخرى:**
+   763→
+   764→| الملف | التغيير |
+   765→|---|---|
+   766→| `client/src/routes/index.tsx` | إزالة route `/agents` (السطور 174–188) |
+   767→| `client/src/hooks/useSideNavLinks.ts` | إزالة رابط الـ Marketplace (السطور 99–112) — **مع الاحتفاظ برابط Agent Builder** |
+   768→| `client/src/hooks/useShowMarketplace.ts` | حذف الملف بالكامل (لم يعد له استخدام) |
+   769→| `client/src/data-provider/Agents/queries.ts` | إزالة `useMarketplaceAgentsInfiniteQuery` (لم يعد له مستهلك) |
+   770→| `client/src/components/Agents/index.ts` | تنظيف exports — إبقاء فقط ما يستخدمه Agent Builder |
+   771→| `client/src/locales/ar/translation.json` | إزالة مفاتيح الترجمة الخاصة بالـ Marketplace |
+   772→| `client/src/locales/en/translation.json` | نفس ما سبق |
+   773→
+   774→**النتيجة:**
+   775→- إزالة ~2000+ سطر من كود غير ضروري.
+   776→- تقليل حجم الـ bundle النهائي.
+   777→- تبسيط الـ mental model: إدارة الـ Agents في مكان واحد فقط (Side Panel → Agent Builder).
+   778→
+   779→#### 2.2 تعزيز Agent Builder في Side Panel
+   780→
+   781→**الملف الأساسي:** `client/src/components/SidePanel/Agents/AgentPanel.tsx`
+   782→
+   783→**السلوك الحالي:**
+   784→- يفتح في وضع "Create New Agent" افتراضياً.
+   785→- يوجد dropdown في الأعلى لاختيار Agent موجود وتعديله.
+   786→- زر "Create New Agent" في السطر 504–517.
+   787→
+   788→**التحسينات المطلوبة:**
+   789→
+   790→| التحسين | الوصف |
+   791→|---|---|
+   792→| استبدال الـ dropdown بقائمة بصرية | بدلاً من dropdown بسيط، عرض قائمة Agents بشكل بصري (شبيهة بـ sidebar list) مع avatar + اسم + وصف مختصر + badge "افتراضي" إن وجد |
+   793→| زر "Create New Agent" | يبقى في أعلى القائمة كما هو، مع تصميم أوضح |
+   794→| النقر على Agent موجود | يفتح نموذج التعديل بنفس الحقول الحالية (نفس السلوك الحالي لكن بواجهة أوضح) |
+   795→| Badge "Default" | بجانب اسم الـ Agent الافتراضي في القائمة (يُضاف في المرحلة 3) |
+   796→| Status indicators | إظهار: مفعّل/معطّل، عدد الأدوات المربوطة، آخر تعديل |
+   797→| Search box | بحث سريع داخل قائمة Agents (خفيف، ليس كامل Marketplace السابق) |
+   798→
+   799→**مخطط الـ Agent Builder المعزز:**
+   800→```
+   801→┌──────────────────────────────────────────┐
+   802→│ ← Agents                          [+جديد]│
+   803→├──────────────────────────────────────────┤
+   804→│ 🔍 بحث...                                 │
+   805→├──────────────────────────────────────────┤
+   806→│ ┌──────────────────────────────────────┐ │
+   807→│ │ [avatar] Ai Norx          [افتراضي] │ │
+   808→│ │ الوكيل المركزي للمنصة                │ │
+   809→│ │ 6 أدوات • آخر تعديل: أمس            │ │
+   810→│ └──────────────────────────────────────┘ │
+   811→│ ┌──────────────────────────────────────┐ │
+   812→│ │ [avatar] Code Helper                 │ │
+   813→│ │ مساعد برمجي متخصص                    │ │
+   814→│ │ 4 أدوات • آخر تعديل: الأسبوع الماضي  │ │
+   815→│ └──────────────────────────────────────┘ │
+   816→│ ┌──────────────────────────────────────┐ │
+   817→│ │ [avatar] Research Bot                │ │
+   818→│ │ للبحث في الويب وتحليل البيانات       │ │
+   819→│ │ 8 أدوات • آخر تعديل: اليوم           │ │
+   820→│ └──────────────────────────────────────┘ │
+   821→└──────────────────────────────────────────┘
+   822→```
+   823→
+   824→**عند النقر على Agent أو زر "+جديد":**
+   825→```
+   826→┌──────────────────────────────────────────┐
+   827→│ ← رجوع        تعديل Agent: Ai Norx       │
+   828→├──────────────────────────────────────────┤
+   829→│ [🟢 تعيين كافتراضي] ← Toggle Switch       │
+   830→├──────────────────────────────────────────┤
+   831→│ الاسم: [Ai Norx]                          │
+   832→│ الوصف: [الوكيل المركزي للمنصة...]         │
+   833→│ الفئة: [general ▼]                        │
+   834→│ ─────────────────────────────────────── │
+   835→│ التعليمات:                                │
+   836→│ [textarea مع variables support]           │
+   837→│ ─────────────────────────────────────── │
+   838→│ المزود: [OpenCodez ▼]   الموديل: [...]    │
+   839→│ ─────────────────────────────────────── │
+   840→│ المعاملات: temperature, top_p, ...        │
+   841→│ ─────────────────────────────────────── │
+   842→│ القدرات: ☑ code  ☑ web_search  ☐ ...     │
+   843→│ ─────────────────────────────────────── │
+   844→│ أدوات MCP: [github, fetch, filesystem]    │
+   845→│ ─────────────────────────────────────── │
+   846→│ المهارات: [list]                          │
+   847→│ ─────────────────────────────────────── │
+   848→│ إعدادات متقدمة: ...                       │
+   849→│ ─────────────────────────────────────── │
+   850→│ [حفظ]  [إلغاء]  [حذف]                     │
+   851→└──────────────────────────────────────────┘
+   852→```
+   853→
+   854→#### 2.3 حقول النموذج المطلوبة (نفس الحقول الحالية + حقل "افتراضي")
+   855→
+   856→| الحقل | ملاحظات |
+   857→|---|---|
+   858→| avatar | كما هو |
+   859→| name | كما هو |
+   860→| description | كما هو |
+   861→| category | كما هو |
+   862→| instructions | كما هو |
+   863→| provider + model | كما هو، لكن من قائمة المزودين الجديدة (المرحلة 4) |
+   864→| model_parameters | كما هو |
+   865→| capabilities | كما هو |
+   866→| mcpServers | كما هو |
+   867→| skills | كما هو |
+   868→| tools & actions | كما هو |
+   869→| support_contact | كما هو |
+   870→| advanced | كما هو |
+   871→| **`isDefault`** | **جديد** — toggle switch في أعلى النموذج (انظر المرحلة 3) |
+   872→
+   873→#### 2.4 الاحتفاظ بـ Agent Builder في Side Panel
+   874→
+   875→**القرار:** Agent Builder يبقى في Side Panel ولا يُنقل إلى Modal مستقل.
+   876→
+   877→**الأسباب:**
+   878→- Agent Builder موجود فعلاً في Side Panel ومدعوم بـ nav link (gated بـ `AGENTS.USE` + `AGENTS.CREATE`).
+   879→- Side Panel يدعم العرض الموسّع بجانب المحادثة، مما يسمح للـ Admin برؤية الـ Agents وتعديلهم بدون مغادرة سياق المحادثة.
+   880→- نقل الـ Agent Builder إلى Modal منفصل سيتطلب إعادة كتابة wiring كبير بدون فائدة واضحة.
+   881→- المستخدم طلب صراحة عدم نقل كل شيء إلى Marketplace — وهذا ينطبق أيضاً على عدم نقل Agent Builder إلى مكان آخر.
+   882→
+   883→---
+   884→
+   885→### المرحلة 3: إضافة حقل "افتراضي" للـ Agent
+   886→
+   887→#### 3.1 تحديث مخطط Agent في DB
+   888→
+   889→**الملف:** `packages/data-schemas/src/schema/agent.ts`
+   890→
+   891→**إضافة الحقل:**
+   892→```ts
+   893→// بعد is_promoted مباشرة
+   894→isDefault: {
+   895→  type: Boolean,
+   896→  default: false,
+   897→  index: true,
+   898→},
+   899→defaultForRoles: {
+   900→  type: [String],
+   901→  default: ['USER'], // الافتراضي للمستخدمين العاديين
+   902→  enum: ['ADMIN', 'USER'],
+   903→},
+   904→```
+   905→
+   906→**Index مركب لضمان التفرد:**
+   907→```ts
+   908→// في نهاية schema
+   909→AgentSchema.index(
+   910→  { tenantId: 1, isDefault: 1, defaultForRoles: 1 },
+   911→  {
+   912→    unique: true,
+   913→    partialFilterExpression: { isDefault: true },
+   914→  },
+   915→);
+   916→```
+   917→
+   918→> **ملاحظة:** هذا يضمن أنه لا يمكن وجود أكثر من Agent افتراضي لنفس الدور في نفس الـ tenant. إذا أراد الـ Admin تعيين Agent جديد كافتراضي، الـ backend سيلغي تلقائياً الافتراضية من القديم.
+   919→
+   920→#### 3.2 إضافة Endpoint جديد لتعيين/إزالة الافتراضية
+   921→
+   922→**الملف:** `api/server/routes/agents/v1.js` (إضافة route)
+   923→
+   924→```js
+   925→// POST /api/agents/:id/set-default
+   926→router.post(
+   927→  '/:id/set-default',
+   928→  requireJwtAuth,
+   929→  generateCheckAccess(PermissionTypes.AGENTS, Permissions.EDIT),
+   930→  async (req, res) => {
+   931→    const { id } = req.params;
+   932→    const { roles = ['USER'] } = req.body;
+   933→
+   934→    // 1. إزالة الافتراضية من جميع الـ Agents الأخرى لنفس الأدوار
+   935→    await Agent.updateMany(
+   936→      {
+   937→        tenantId: req.user.tenantId,
+   938→        isDefault: true,
+   939→        defaultForRoles: { $in: roles },
+   940→        id: { $ne: id },
+   941→      },
+   942→      { $set: { isDefault: false, defaultForRoles: [] } },
+   943→    );
+   944→
+   945→    // 2. تعيين الـ Agent الجديد كافتراضي
+   946→    const agent = await db.updateAgent(
+   947→      { id },
+   948→      { isDefault: true, defaultForRoles: roles },
+   949→    );
+   950→
+   951→    res.status(200).json(agent);
+   952→  },
+   953→);
+   954→
+   955→// POST /api/agents/:id/unset-default
+   956→router.post(
+   957→  '/:id/unset-default',
+   958→  requireJwtAuth,
+   959→  generateCheckAccess(PermissionTypes.AGENTS, Permissions.EDIT),
+   960→  async (req, res) => {
+   961→    const { id } = req.params;
+   962→    const agent = await db.updateAgent(
+   963→      { id },
+   964→      { isDefault: false, defaultForRoles: [] },
+   965→    );
+   966→    res.status(200).json(agent);
+   967→  },
+   968→);
+   969→
+   970→// GET /api/agents/default
+   971→router.get(
+   972→  '/default',
+   973→  requireJwtAuth,
+   974→  async (req, res) => {
+   975→    const agent = await Agent.findOne({
+   976→      tenantId: req.user.tenantId,
+   977→      isDefault: true,
+   978→      defaultForRoles: req.user.role,
+   979→    }).lean();
+   980→    res.status(200).json(agent);
+   981→  },
+   982→);
+   983→```
+   984→
+   985→#### 3.3 إضافة data-provider mutations على الفرونت إند
+   986→
+   987→**الملف:** `client/src/data-provider/Agents/mutations.ts` (إضافة)
+   988→
+   989→```ts
+   990→export const useSetDefaultAgentMutation = () => {
+   991→  const queryClient = useQueryClient();
+   992→  return useMutation({
+   993→    mutationFn: ({ id, roles }: { id: string; roles: string[] }) =>
+   994→      request.post(`/api/agents/${id}/set-default`, { roles }),
+   995→    onSuccess: () => {
+   996→      queryClient.invalidateQueries([QueryKeys.agents]);
+   997→      queryClient.invalidateQueries([QueryKeys.marketplaceAgents]);
+   998→      queryClient.invalidateQueries([QueryKeys.defaultAgent]);
+   999→    },
+  1000→  });
+  1001→};
+  1002→
+  1003→export const useUnsetDefaultAgentMutation = () => {
+  1004→  const queryClient = useQueryClient();
+  1005→  return useMutation({
+  1006→    mutationFn: ({ id }: { id: string }) =>
+  1007→      request.post(`/api/agents/${id}/unset-default`),
+  1008→    onSuccess: () => {
+  1009→      queryClient.invalidateQueries([QueryKeys.agents]);
+  1010→      queryClient.invalidateQueries([QueryKeys.marketplaceAgents]);
+  1011→      queryClient.invalidateQueries([QueryKeys.defaultAgent]);
+  1012→    },
+  1013→  });
+  1014→};
+  1015→
+  1016→export const useGetDefaultAgentQuery = (role?: string) => {
+  1017→  return useQuery(
+  1018→    [QueryKeys.defaultAgent, role],
+  1019→    () => request.get('/api/agents/default', { params: { role } }),
+  1020→    { enabled: true, staleTime: 60_000 },
+  1021→  );
+  1022→};
+  1023→```
+  1024→
+  1025→#### 3.4 إضافة Toggle Switch في نموذج الـ Agent
+  1026→
+  1027→**الملف:** `client/src/components/SidePanel/Agents/AgentConfig.tsx` (إضافة في أعلى النموذج)
+  1028→
+  1029→```tsx
+  1030→import { useSetDefaultAgentMutation, useUnsetDefaultAgentMutation } from '~/data-provider/Agents/mutations';
+  1031→import { Switch } from '~/components/ui/switch';
+  1032→
+  1033→function DefaultAgentToggle({ agentId, isDefault }: { agentId?: string; isDefault: boolean }) {
+  1034→  const setDefault = useSetDefaultAgentMutation();
+  1035→  const unsetDefault = useUnsetDefaultAgentMutation();
+  1036→
+  1037→  const handleToggle = (checked: boolean) => {
+  1038→    if (!agentId) return; // غير متاح في وضع الإنشاء
+  1039→    if (checked) {
+  1040→      setDefault.mutate({ id: agentId, roles: ['USER', 'ADMIN'] });
+  1041→    } else {
+  1042→      unsetDefault.mutate({ id: agentId });
+  1043→    }
+  1044→  };
+  1045→
+  1046→  return (
+  1047→    <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-3">
+  1048→      <div>
+  1049→        <p className="text-sm font-semibold">تعيين كـ Agent افتراضي</p>
+  1050→        <p className="text-xs text-text-secondary">
+  1051→          سيتم استخدام هذا الـ Agent تلقائياً عند بدء أي محادثة جديدة في وضع Agent Mode
+  1052→        </p>
+  1053→      </div>
+  1054→      <Switch checked={isDefault} onCheckedChange={handleToggle} disabled={!agentId} />
+  1055→    </div>
+  1056→  );
+  1057→}
+  1058→```
+  1059→
+  1060→#### 3.5 إضافة badge "Default" في قائمة Agent Builder
+  1061→
+  1062→**الملف:** `client/src/components/SidePanel/Agents/AgentPanel.tsx` (داخل قائمة Agents الجديدة في الأعلى)
+  1063→
+  1064→```tsx
+  1065→{agent.isDefault && (
+  1066→  <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-white">
+  1067→    افتراضي
+  1068→  </span>
+  1069→)}
+  1070→```
+  1071→
+  1072→**ملاحظة:** بما أن Marketplace محذوف، الـ badge يظهر فقط في قائمة Agent Builder.
+  1073→
+  1074→#### 3.6 تحديث `buildDefaultConvo.ts` لجلب الـ Agent الافتراضي من DB
+  1075→
+  1076→**التغيير في:** `client/src/utils/buildDefaultConvo.ts`
+  1077→
+  1078→```ts
+  1079→// إزالة const PRIMARY_AGENT_ID = 'agent_primary';
+  1080→
+  1081→// إضافة بارامتر جديد
+  1082→export const buildDefaultConvo = async ({
+  1083→  models,
+  1084→  conversation,
+  1085→  endpoint = null,
+  1086→  lastConversationSetup,
+  1087→  defaultParamsEndpoint,
+  1088→  defaultAgentId, // ✅ جديد — يُمرر من المُستدعي
+  1089→}: {
+  1090→  // ... الحقول الحالية ...
+  1091→  defaultAgentId?: string | null;
+  1092→}): Promise<TConversation> => {
+  1093→  // ... المنطق الحالي ...
+  1094→
+  1095→  if (isAgentsEndpoint(endpoint)) {
+  1096→    const agentId = defaultAgentId ?? 'agent_primary'; // fallback مؤقت للتوافقية
+  1097→    defaultConvo.agent_id = agentId;
+  1098→    defaultConvo.model = agentId;
+  1099→    defaultConvo.tools = undefined;
+  1100→  } else {
+  1101→    clearModelForNonEphemeralAgent(defaultConvo);
+  1102→    defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
+  1103→  }
+  1104→
+  1105→  return defaultConvo;
+  1106→};
+  1107→```
+  1108→
+  1109→**والتغيير في `useNewConvo.ts`:**
+  1110→
+  1111→```ts
+  1112→import { useGetDefaultAgentQuery } from '~/data-provider/Agents/mutations';
+  1113→
+  1114→// داخل useNewConvo
+  1115→const { data: defaultAgent } = useGetDefaultAgentQuery();
+  1116→
+  1117→const newConversation = useCallback(async () => {
+  1118→  // ...
+  1119→  const endpoint = getDefaultEndpoint({ ... });
+  1120→  const convo = await buildDefaultConvo({
+  1121→    // ...
+  1122→    defaultAgentId: defaultAgent?.id,
+  1123→  });
+  1124→  // ...
+  1125→}, [defaultAgent]);
+  1126→```
+  1127→
+  1128→#### 3.7 تحديث `canAccessAgentFromBody.js` (الباك إند)
+  1129→
+  1130→**الملف:** `api/server/middleware/agents/canAccessAgentFromBody.js` (الأسطر 172–183)
+  1131→
+  1132→**قبل:**
+  1133→```js
+  1134→if (req.user.role === SystemRoles.USER && body.agent_id !== 'agent_primary') {
+  1135→  return res.status(403).json({ error: 'User role can only use agent_primary' });
+  1136→}
+  1137→```
+  1138→
+  1139→**بعد:**
+  1140→```js
+  1141→// جلب الـ Agent الافتراضي من DB
+  1142→const defaultAgent = await Agent.findOne({
+  1143→  tenantId: req.user.tenantId,
+  1144→  isDefault: true,
+  1145→  defaultForRoles: req.user.role,
+  1146→}).lean();
+  1147→
+  1148→if (defaultAgent && body.agent_id !== defaultAgent.id) {
+  1149→  // الـ USER يستطيع فقط استخدام الـ Agent الافتراضي
+  1150→  // الـ ADMIN يستطيع استخدام أي Agent (لا تقييد)
+  1151→  if (req.user.role === SystemRoles.USER) {
+  1152→    return res.status(403).json({
+  1153→      error: 'User role can only use the default agent',
+  1154→      defaultAgentId: defaultAgent.id,
+  1155→    });
+  1156→  }
+  1157→}
+  1158→```
+  1159→
+  1160→#### 3.8 إزالة `PRIMARY_AGENT_ID = 'agent_primary'` من كل المواقع
+  1161→
+  1162→| الملف | الإجراء |
+  1163→|---|---|
+  1164→| `client/src/utils/buildDefaultConvo.ts:17` | حذف السطر |
+  1165→| `config/setup-primary-agent.js:37` | سيتغير في المرحلة 5 |
+  1166→| `api/server/middleware/agents/canAccessAgentFromBody.js` | تغيير كما في 3.7 |
+  1167→
+  1168→---
+  1169→
+  1170→### المرحلة 4: واجهة إدارة المزودين الجديدة
+  1171→
+  1172→#### 4.1 إنشاء DB Collection جديدة للمزودين
+  1173→
+  1174→**الملف الجديد:** `packages/data-schemas/src/schema/provider.ts`
+  1175→
+  1176→```ts
+  1177→import mongoose from 'mongoose';
+  1178→
+  1179→const providerSchema = new mongoose.Schema({
+  1180→  id: { type: String, required: true, unique: true, index: true },
+  1181→  name: { type: String, required: true }, // الاسم المعروض
+  1182→  type: {
+  1183→    type: String,
+  1184→    enum: ['openai', 'anthropic', 'google', 'custom', 'azure', 'bedrock'],
+  1185→    default: 'custom',
+  1186→  },
+  1187→  baseURL: { type: String, required: true },
+  1188→  apiKeyEnvVar: { type: String }, // اسم متغير البيئة، وليس القيمة
+  1189→  iconURL: { type: String },
+  1190→  description: { type: String },
+  1191→  isEnabled: { type: Boolean, default: true, index: true },
+  1192→  models: [{
+  1193→    id: { type: String, required: true },
+  1194→    name: { type: String, required: true },
+  1195→    contextWindow: { type: Number },
+  1196→    maxTokens: { type: Number },
+  1197→    inputPrice: { type: Number }, // per 1K tokens
+  1198→    outputPrice: { type: Number },
+  1199→    capabilities: {
+  1200→      chat: { type: Boolean, default: true },
+  1201→      vision: { type: Boolean, default: false },
+  1202→      function_calling: { type: Boolean, default: true },
+  1203→      streaming: { type: Boolean, default: true },
+  1204→    },
+  1205→    isDefault: { type: Boolean, default: false }, // الموديل الافتراضي للمزود
+  1206→    isEnabled: { type: Boolean, default: true },
+  1207→  }],
+  1208→  author: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  1209→  tenantId: { type: String, index: true },
+  1210→  createdAt: { type: Date, default: Date.now },
+  1211→  updatedAt: { type: Date, default: Date.now },
+  1212→});
+  1213→
+  1214→export default mongoose.model('Provider', providerSchema);
+  1215→```
+  1216→
+  1217→#### 4.2 إضافة Endpoints لإدارة المزودين
+  1218→
+  1219→**الملف الجديد:** `api/server/routes/providers.js`
+  1220→
+  1221→| الطريقة | المسار | الوظيفة | الصلاحية |
+  1222→|---|---|---|---|
+  1223→| GET | `/api/providers` | قائمة كل المزودين | `ADMIN` فقط |
+  1224→| GET | `/api/providers/:id` | تفاصيل مزود | `ADMIN` |
+  1225→| POST | `/api/providers` | إنشاء مزود جديد | `ADMIN` |
+  1226→| PATCH | `/api/providers/:id` | تعديل مزود | `ADMIN` |
+  1227→| DELETE | `/api/providers/:id` | حذف مزود | `ADMIN` |
+  1228→| POST | `/api/providers/:id/models` | إضافة موديل | `ADMIN` |
+  1229→| PATCH | `/api/providers/:id/models/:modelId` | تعديل موديل | `ADMIN` |
+  1230→| DELETE | `/api/providers/:id/models/:modelId` | حذف موديل | `ADMIN` |
+  1231→| POST | `/api/providers/:id/models/:modelId/set-default` | تعيين موديل افتراضي | `ADMIN` |
+  1232→| GET | `/api/providers/public` | قائمة مختصرة للمزودين والموديلات (للاستخدام في نموذج الـ Agent) | `AGENTS.USE` |
+  1233→
+  1234→#### 4.3 إنشاء الواجهة الأمامية لإدارة المزودين
+  1235→
+  1236→**الملفات الجديدة:**
+  1237→- `client/src/components/Providers/ProvidersManagementView.tsx` — الصفحة الرئيسية
+  1238→- `client/src/components/Providers/ProviderCard.tsx` — بطاقة مزود
+  1239→- `client/src/components/Providers/ProviderDialog.tsx` — نموذج إنشاء/تعديل مزود
+  1240→- `client/src/components/Providers/ModelList.tsx` — قائمة الموديلات داخل مزود
+  1241→- `client/src/components/Providers/ModelDialog.tsx` — نموذج إنشاء/تعديل موديل
+  1242→- `client/src/components/Providers/index.ts`
+  1243→
+  1244→**تخطيط الواجهة:**
+  1245→```
+  1246→┌─────────────────────────────────────────────────────┐
+  1247→│ المزودون                                  [+ مزود]  │
+  1248→├─────────────────────────────────────────────────────┤
+  1249→│ ┌─────────────────────┐  ┌─────────────────────┐  │
+  1250→│ │ OpenAI              │  │ Anthropic           │  │
+  1251→│ │ 5 موديلات           │  │ 3 موديلات           │  │
+  1252→│ │ [تعديل] [حذف]       │  │ [تعديل] [حذف]       │  │
+  1253→│ └─────────────────────┘  └─────────────────────┘  │
+  1254→│                                                       │
+  1255→│ ┌─────────────────────────────────────────────────┐ │
+  1256→│ │ OpenCodez (افتراضي)                              │ │
+  1257→│ │ ┌─────────────────────────────────────────────┐ │ │
+  1258→│ │ │ deepseek-v4-flash-free    [افتراضي]         │ │ │
+  1259→│ │ │   context: 32K, function_calling ✓          │ │ │
+  1260→│ │ │   [تعديل] [حذف]                              │ │ │
+  1261→│ │ ├─────────────────────────────────────────────┤ │ │
+  1262→│ │ │ qwen-2.5-coder-free                        │ │ │
+  1263→│ │ │   [تعديل] [حذف]                              │ │ │
+  1264→│ │ └─────────────────────────────────────────────┘ │ │
+  1265→│ │ [+ إضافة موديل]                                 │ │
+  1266→│ └─────────────────────────────────────────────────┘ │
+  1267→└─────────────────────────────────────────────────────┘
+  1268→```
+  1269→
+  1270→#### 4.4 إضافة رابط تنقل للوحة المزودين
+  1271→
+  1272→**الملف:** `client/src/hooks/useSideNavLinks.ts`
+  1273→
+  1274→```ts
+  1275→// إضافة link جديد (للـ ADMIN فقط)
+  1276→{
+  1277→  label: 'المزودون',
+  1278→  icon: ServerIcon,
+  1279→  onClick: () => navigate('/providers'),
+  1280→  hasAccess: (user) => user?.role === SystemRoles.ADMIN,
+  1281→}
+  1282→```
+  1283→
+  1284→**الملف:** `client/src/routes/index.tsx`
+  1285→
+  1286→```tsx
+  1287→<Route path="/providers" element={<ProvidersManagementView />} />
+  1288→```
+  1289→
+  1290→#### 4.5 ربط المزودين الجدد بـ `librechat.yaml` ديناميكياً
+  1291→
+  1292→**المشكلة:** LibreChat يقرأ المزودين من `librechat.yaml` عند الإقلاع فقط. لا يمكن إضافة مزود ديناميكياً دون إعادة تشغيل.
+  1293→
+  1294→**الحل المقترح (مرحلتان):**
+  1295→
+  1296→**المرحلة 4.أ (سريعة — Hot Reload):**
+  1297→- عند إنشاء/تعديل/حذف مزود، يُكتب التعديل في DB **و** في `librechat.yaml`.
+  1298→- يُستدعى `EndpointService.reloadEndpoints()` لإعادة تحميل الـ config بدون restart.
+  1299→
+  1300→**المرحلة 4.ب (بعيدة المدى — API-driven):**
+  1301→- تعديل `EndpointService.js` ليقرأ من DB أولاً ثم يدمج مع YAML.
+  1302→- يصبح YAML للـ built-in defaults فقط.
+  1303→
+  1304→**التغيير في:** `api/server/services/Config/EndpointService.js`
+  1305→
+  1306→```js
+  1307→const getEndpointsConfig = async (req) => {
+  1308→  // 1. قراءة YAML
+  1309→  const yamlConfig = loadYamlConfig();
+  1310→
+  1311→  // 2. قراءة DB providers
+  1312→  const dbProviders = await Provider.find({ isEnabled: true, tenantId: req.user.tenantId }).lean();
+  1313→
+  1314→  // 3. دمج: DB أولوية على YAML
+  1315→  const customEndpoints = [
+  1316→    ...yamlConfig.endpoints?.custom ?? [],
+  1317→    ...dbProviders.map(p => ({
+  1318→      name: p.name,
+  1319→      apiKey: process.env[p.apiKeyEnvVar],
+  1320→      baseURL: p.baseURL,
+  1321→      models: {
+  1322→        default: p.models.filter(m => m.isDefault).map(m => m.id),
+  1323→        list: p.models.filter(m => m.isEnabled).map(m => m.id),
+  1324→      },
+  1325→    })),
+  1326→  ];
+  1327→
+  1328→  return {
+  1329→    ...yamlConfig,
+  1330→    endpoints: {
+  1331→      ...yamlConfig.endpoints,
+  1332→      custom: customEndpoints,
+  1333→    },
+  1334→  };
+  1335→};
+  1336→```
+  1337→
+  1338→#### 4.6 تحديث نموذج الـ Agent لاستخدام المزودين الجدد
+  1339→
+  1340→**الملف:** `client/src/components/SidePanel/Agents/ModelPanel.tsx`
+  1341→
+  1342→```tsx
+  1343→import { useGetProvidersPublicQuery } from '~/data-provider/Providers/queries';
+  1344→
+  1345→function ModelPanel() {
+  1346→  const { data: providers } = useGetProvidersPublicQuery();
+  1347→
+  1348→  return (
+  1349→    <div>
+  1350→      <Label>المزود</Label>
+  1351→      <Select name="provider">
+  1352→        {providers?.map(p => (
+  1353→          <SelectItem key={p.id} value={p.name}>{p.name}</SelectItem>
+  1354→        ))}
+  1355→      </Select>
+  1356→
+  1357→      <Label>الموديل</Label>
+  1358→      <Select name="model">
+  1359→        {selectedProvider?.models.map(m => (
+  1360→          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+  1361→        ))}
+  1362→      </Select>
+  1363→    </div>
+  1364→  );
+  1365→}
+  1366→```
+  1367→
+  1368→---
+  1369→
+  1370→### المرحلة 5: إصلاح مشكلة تحديث الـ Agent
+  1371→
+  1372→#### 5.1 تعطيل/تعديل سكربت `setup-primary-agent.js`
+  1373→
+  1374→**المشكلة الجذرية:** السكربت `config/setup-primary-agent.js` يعيد كتابة `agent_primary` بالتعليمات العربية hardcoded عند كل تشغيل، مما يمحى تعديلات الـ Admin.
+  1375→
+  1376→**الحلول المقترحة (3 خيارات، يُختار الأنسب):**
+  1377→
+  1378→##### الخيار أ (موصى به): تحويل السكربت إلى "seed once"
+  1379→- السكربت يُشغّل **مرة واحدة فقط** عند إنشاء DB جديد (first-time setup).
+  1380→- يُضاف فحص: إذا كان `agent_primary` موجوداً، لا يُعاد كتابته.
+  1381→- يُضاف `if (agent) { console.log('Skip: agent already exists'); return; }` قبل الـ upsert.
+  1382→
+  1383→**التغيير في:** `config/setup-primary-agent.js` (الأسطر 186–192)
+  1384→
+  1385→**قبل:**
+  1386→```js
+  1387→if (agent) {
+  1388→  agent = await db.updateAgent({ id: PRIMARY_AGENT_ID }, agentData);
+  1389→  console.log(`✓ Updated existing primary-agent: ${agent._id}`);
+  1390→} else {
+  1391→  agent = await db.createAgent(agentData);
+  1392→  console.log(`✓ Created new primary-agent: ${agent._id}`);
+  1393→}
+  1394→```
+  1395→
+  1396→**بعد:**
+  1397→```js
+  1398→if (agent) {
+  1399→  console.log(`✓ Primary agent already exists (id: ${agent.id}). Skipping — admin edits preserved.`);
+  1400→  // لا update، لا overwrite
+  1401→} else {
+  1402→  agent = await db.createAgent({ ...agentData, isDefault: true, defaultForRoles: ['USER', 'ADMIN'] });
+  1403→  console.log(`✓ Created new primary-agent: ${agent._id} (set as default)`);
+  1404→}
+  1405→```
+  1406→
+  1407→##### الخيار ب: حذف السكربت تماماً بعد أول seed
+  1408→- بعد تشغيله أول مرة، يُحذف من الـ repo.
+  1409→- الـ Admin يتحكم بالكامل من الواجهة.
+  1410→
+  1411→##### الخيار ج: نقله إلى npm script منفصل يُشغّل يدوياً فقط
+  1412→- `npm run seed:primary-agent` — لا يُشغّل تلقائياً.
+  1413→- يُستخدم فقط عند إعادة إنشاء DB من الصفر.
+  1414→
+  1415→#### 5.2 التحقق من عدم وجود استدعاءات أخرى للسكربت
+  1416→
+  1417→**الفحوصات المطلوبة:**
+  1418→1. البحث في كل ملفات CI/CD (`.github/workflows/*.yml`).
+  1419→2. البحث في `Dockerfile`, `Dockerfile.multi`, `docker-compose.yml`, `deploy-compose.yml`.
+  1420→3. البحث في `railway.json`, `package.json` (scripts).
+  1421→4. فحص سجل الـ deploys على Railway للتأكد.
+  1422→
+  1423→> **نتيجة الفحص الحالية:** لم يتم العثور على استدعاء للسكربت في أي من هذه المواقع. لكن يجب التأكيد مع المستخدم: كيف يتم تشغيله حالياً؟ هل يوجد cron job؟ هل يوجد hook خارجي؟
+  1424→
+  1425→#### 5.3 إضافة logging لكشف التحديثات المستقبلية
+  1426→
+  1427→**الملف:** `packages/data-schemas/src/methods/agent.ts` (داخل `updateAgent`)
+  1428→
+  1429→```ts
+  1430→export const updateAgent = async (searchParameter, updateData, options = {}) => {
+  1431→  // ✅ إضافة logging للكشف عن أي تحديث مستقبلي غير متوقع
+  1432→  if (process.env.NODE_ENV !== 'test') {
+  1433→    console.log('[updateAgent]', {
+  1434→      search: searchParameter,
+  1435→      fields: Object.keys(updateData),
+  1436→      timestamp: new Date().toISOString(),
+  1437→      stack: new Error().stack,
+  1438→    });
+  1439→  }
+  1440→
+  1441→  // ... المنطق الحالي ...
+  1442→};
+  1443→```
+  1444→
+  1445→> يُمكن إزالة هذا الـ logging بعد التحقق من استقرار النظام لمدة أسبوع.
+  1446→
+  1447→#### 5.4 ضمان عدم تحديث الـ Agent أثناء تدفق المحادثة
+  1448→
+  1449→**الفحص:** تم التأكد من أن `ResumableAgentController` و `initializeAgent` في `packages/api/src/agents/initialize.ts` لا يستدعيان `db.updateAgent`. فقط `agent.instructions = replaceSpecialVars(...)` على object مؤقت (lean) — لا يُكتب في DB.
+  1450→
+  1451→**التوصية:** إضافة اختبار integration:
+  1452→
+  1453→**الملف الجديد:** `api/tests/agents/no-update-on-chat.spec.js`
+  1454→
+  1455→```js
+  1456→describe('Agent immutability during chat', () => {
+  1457→  it('should not call updateAgent when starting a new conversation', async () => {
+  1458→    const updateAgentSpy = jest.spyOn(db, 'updateAgent');
+  1459→
+  1460→    // محاكاة بدء محادثة جديدة
+  1461→    await request(app)
+  1462→      .post('/api/agents/chat/')
+  1463→      .set('Authorization', `Bearer ${userToken}`)
+  1464→      .send({ conversationId: 'new', agent_id: 'agent_primary', message: 'hello' });
+  1465→
+  1466→    expect(updateAgentSpy).not.toHaveBeenCalled();
+  1467→  });
+  1468→});
+  1469→```
+  1470→
+  1471→---
+  1472→
+  1473→## 9. خطة تنفيذ مرتبة بالأولوية
+  1474→
+  1475→### الأولوية P0 (حرجة — يجب تنفيذها أولاً)
+  1476→
+  1477→| # | المهمة | الملفات المتأثرة | التقدير |
+  1478→|---|---|---|---|
+  1479→| 1 | إصلاح `setup-primary-agent.js` (الخيار أ) | `config/setup-primary-agent.js` | 15 دقيقة |
+  1480→| 2 | إضافة logging في `updateAgent` | `packages/data-schemas/src/methods/agent.ts` | 10 دقائق |
+  1481→| 3 | التحقق من CI/CD لاستدعاءات السكربت | كل ملفات CI/CD + Railway | 30 دقيقة |
+  1482→
+  1483→### الأولوية P1 (عالية — أساس الميزة الجديدة)
+  1484→
+  1485→| # | المهمة | الملفات المتأثرة | التقدير |
+  1486→|---|---|---|---|
+  1487→| 4 | إضافة `isDefault` و `defaultForRoles` إلى مخطط Agent | `packages/data-schemas/src/schema/agent.ts` | 30 دقيقة |
+  1488→| 5 | إضافة endpoints `/api/agents/:id/set-default`, `/unset-default`, `/default` | `api/server/routes/agents/v1.js` | 1 ساعة |
+  1489→| 6 | إضافة data-provider mutations للـ default agent | `client/src/data-provider/Agents/mutations.ts` | 30 دقيقة |
+  1490→| 7 | إضافة Toggle Switch في نموذج الـ Agent | `client/src/components/SidePanel/Agents/AgentConfig.tsx` | 30 دقيقة |
+  1491→| 8 | تحديث `buildDefaultConvo.ts` لجلب الـ Agent الافتراضي | `client/src/utils/buildDefaultConvo.ts`, `useNewConvo.ts` | 1 ساعة |
+  1492→| 9 | تحديث `canAccessAgentFromBody.js` | `api/server/middleware/agents/canAccessAgentFromBody.js` | 30 دقيقة |
+  1493→| 10 | إزالة `PRIMARY_AGENT_ID` hardcoded | 3 ملفات | 15 دقيقة |
+  1494→
+  1495→### الأولوية P2 (متوسطة — تحسين تجربة المستخدم)
+  1496→
+  1497→| # | المهمة | الملفات المتأثرة | التقدير |
+  1498→|---|---|---|---|
+  1499→| 11 | إنشاء `ModeSwitcher` component | `client/src/components/Chat/ModeSwitcher.tsx` (جديد) | 1 ساعة |
+  1500→| 12 | استبدال `ModelSelector` في `Header.tsx` بـ `ModeSwitcher` | `client/src/components/Chat/Header.tsx` | 15 دقيقة |
+  1501→| 13 | تحديث `getDefaultEndpoint.ts` (إزالة hardcode USER) | `client/src/utils/getDefaultEndpoint.ts` | 15 دقيقة |
+  1502→| 14 | **حذف Marketplace بالكامل** (12 ملف + إزالة route + إزالة nav link) | `client/src/components/Agents/*`, `routes/index.tsx`, `useSideNavLinks.ts`, `useShowMarketplace.ts` | 2 ساعة |
+  1503→| 15 | تعزيز `AgentPanel.tsx` بقائمة بصرية للأAgents + search + status indicators | `client/src/components/SidePanel/Agents/AgentPanel.tsx` | 2 ساعة |
+  1504→| 16 | إضافة badge "Default" في قائمة `AgentPanel` | `client/src/components/SidePanel/Agents/AgentPanel.tsx` | 15 دقيقة |
+  1505→| 17 | تنظيف data-provider من `useMarketplaceAgentsInfiniteQuery` و اختبارات Marketplace الميتة | `client/src/data-provider/Agents/queries.ts`, `client/src/components/Agents/tests/*` | 30 دقيقة |
+  1506→| 18 | إزالة مفاتيح ترجمة Marketplace من `ar/en` | `client/src/locales/{ar,en}/translation.json` | 15 دقيقة |
+  1507→
+  1508→### الأولوية P3 (منخفضة — ميزة المزودين الديناميكيين)
+  1509→
+  1510→| # | المهمة | الملفات المتأثرة | التقدير |
+  1511→|---|---|---|---|
+  1512→| 18 | إنشاء مخطط Provider جديد | `packages/data-schemas/src/schema/provider.ts` (جديد) | 1 ساعة |
+  1513→| 19 | إضافة endpoints `/api/providers/*` | `api/server/routes/providers.js` (جديد) | 2 ساعة |
+  1514→| 20 | إنشاء واجهة إدارة المزودين | `client/src/components/Providers/*` (جديد) | 4 ساعات |
+  1515→| 21 | تحديث `EndpointService.js` لدمج DB providers | `api/server/services/Config/EndpointService.js` | 2 ساعة |
+  1516→| 22 | تحديث `ModelPanel.tsx` لاستخدام المزودين الجدد | `client/src/components/SidePanel/Agents/ModelPanel.tsx` | 1 ساعة |
+  1517→| 23 | إضافة route و nav link للمزودين | `client/src/routes/index.tsx`, `useSideNavLinks.ts` | 30 دقيقة |
+  1518→
+  1519→### الأولوية P4 (تنظيف وتحسين)
+  1520→
+  1521→| # | المهمة | الملفات المتأثرة | التقدير |
+  1522→|---|---|---|---|
+  1523→| 25 | إضافة boolean صريح `isAgentMode` في store | `client/src/store/families.ts` | 30 دقيقة |
+  1524→| 26 | توحيد role checks في طبقة واحدة | `client/src/utils/roles.ts` + إزالة من `Header.tsx` | 1 ساعة |
+  1525→| 27 | إضافة اختبارات unit + integration | `client/src/**/__tests__/*`, `api/tests/*` | 4 ساعات |
+  1526→| 28 | تحديث الترجمات (ar/en) للنصوص الجديدة | `client/src/locales/ar/translation.json`, `en/translation.json` | 30 دقيقة |
+  1527→
+  1528→**الإجمالي التقديري:** ~22 ساعة عمل (3 أيام تطوير مكثف).
+  1529→
+  1530→---
+  1531→
+  1532→## 10. المخاطر والاعتبارات
+  1533→
+  1534→### 10.1 المخاطر التقنية
+  1535→
+  1536→| الخطر | الاحتمالية | التأثير | التخفيف |
+  1537→|---|---|---|---|
+  1538→| **Breaking change على المحادثات الحالية** | متوسطة | عالية | Migration script لتحديث `agent_id = 'agent_primary'` إلى الـ Agent الافتراضي الجديد في كل المحادثات الموجودة |
+  1539→| **فقدان تخصيصات الـ Admin الموجودة** | عالية | عالية | أخذ backup كامل لـ DB قبل تنفيذ المرحلة 5 |
+  1540→| **تعارض `isDefault` مع `is_promoted`** | منخفضة | متوسطة | توثيق واضح: `isDefault` = routing, `is_promoted` = marketing |
+  1541→| **أداء query الـ default agent** | منخفضة | منخفضة | Index على `(tenantId, isDefault, defaultForRoles)` + React Query caching |
+  1542→| **DB providers لا تتزامن مع YAML** | متوسطة | متوسطة | مرحلة 4.أ (hot reload) قبل 4.ب (API-driven) |
+  1543→| **الـ USER يرى "Chat" لكن لا مزود متاح** | متوسطة | متوسطة | التحقق من وجود endpoint `custom` مفعّل قبل عرض الخيار |
+  1544→
+  1545→### 10.2 اعتبارات التراجع (Rollback)
+  1546→
+  1547→لكل مرحلة، يجب تجهيز rollback plan:
+  1548→
+  1549→| المرحلة | Rollback |
+  1550→|---|---|
+  1551→| 1 (ModeSwitcher) | استرجاع `<ModelSelector>` في `Header.tsx` من git |
+  1552→| 2 (Marketplace list-first) | استرجاع `AgentDetailContent` view-only |
+  1553→| 3 (isDefault) | حذف الحقل من schema + إعادة `PRIMARY_AGENT_ID` hardcoded |
+  1554→| 4 (Providers UI) | حذف collection + الرجوع لـ YAML فقط |
+  1555→| 5 (setup-primary-agent) | استرجاع السكربت القديم من git |
+  1556→
+  1557→### 10.3 اعتبارات الأمان
+  1558→
+  1559→- **تأكيد صلاحية ADMIN فقط** على endpoints إدارة المزودين والـ Agents.
+  1560→- **منع privilege escalation**: لا يمكن للـ USER تعديل `isDefault` عبر API مباشرة (التحقق من الدور في الـ middleware).
+  1561→- **Tenant isolation**: كل queries يجب أن تحتوي `tenantId` لمنع تسريب البيانات بين tenants.
+  1562→
+  1563→### 10.4 اعتبارات تجربة المستخدم
+  1564→
+  1565→- **الـ USER في وضع "Chat"**: ما الذي يحدث إذا لم يكن هناك مزود `custom` مفعّل؟
+  1566→  - **الحل:** إخفاء خيار "Chat" إذا لم يكن هناك endpoint متاح.
+  1567→- **الـ Admin يرى وضع "Chat"**: سيستخدم أول مزود `custom` متاح. هل هذا مرغوب؟
+  1568→  - **الحل:** نعم — الـ Admin يحتاج لاختبار الموديلات مباشرة أحياناً.
+  1569→- **الترجمة العربية**: كل النصوص الجديدة يجب أن تكون عربية أولاً (`Agent Mode` → `وضع المساعد`, `Chat` → `دردشة`).
+  1570→
+  1571→### 10.5 اعتبارات التوافقية العكسية (Backward Compatibility)
+  1572→
+  1573→- **المحادثات القديمة** التي تستخدم `agent_id = 'agent_primary'`: يجب أن تستمر في العمل. الحل: ترك `agent_primary` كـ fallback في `buildDefaultConvo.ts` إذا لم يوجد default agent.
+  1574→- **الـ Agents الموجودون**: لا يحتاجون migration — فقط الـ Agent الذي يريد الـ Admin تعيينه كافتراضي يُحدّث.
+  1575→- **`librechat.yaml`**: يبقى كما هو في البداية. المزودون الجدد من DB يُدمجون فوقه.
+  1576→
+  1577→---
+  1578→
+  1579→## 11. ملخص التغييرات المطلوبة لكل ملف
+  1580→
+  1581→### ملفات جديدة (14 ملف)
+  1582→
+  1583→| المسار | الوصف |
+  1584→|---|---|
+  1585→| `client/src/components/Chat/ModeSwitcher.tsx` | زر التبديل بين Agent Mode و Chat |
+  1586→| `client/src/components/Providers/ProvidersManagementView.tsx` | واجهة إدارة المزودين |
+  1587→| `client/src/components/Providers/ProviderCard.tsx` | بطاقة مزود |
+  1588→| `client/src/components/Providers/ProviderDialog.tsx` | نموذج مزود |
+  1589→| `client/src/components/Providers/ModelList.tsx` | قائمة موديلات |
+  1590→| `client/src/components/Providers/ModelDialog.tsx` | نموذج موديل |
+  1591→| `client/src/components/Providers/index.ts` | exports |
+  1592→| `client/src/data-provider/Providers/queries.ts` | React Query hooks للمزودين |
+  1593→| `client/src/data-provider/Providers/mutations.ts` | Mutations للمزودين |
+  1594→| `api/server/routes/providers.js` | Routes إدارة المزودين |
+  1595→| `api/server/controllers/ProviderController.js` | Controller للمزودين |
+  1596→| `packages/data-schemas/src/schema/provider.ts` | مخطط Provider |
+  1597→| `api/tests/agents/no-update-on-chat.spec.js` | اختبار عدم تحديث الـ Agent |
+  1598→| `api/migrations/2026-06-25-default-agent.js` | Migration script |
+  1599→
+  1600→### ملفات معدلة (16 ملف)
+  1601→
+  1602→| المسار | طبيعة التغيير |
+  1603→|---|---|
+  1604→| `client/src/components/Chat/Header.tsx` | استبدال `ModelSelector` بـ `ModeSwitcher` |
+  1605→| `client/src/components/SidePanel/Agents/AgentPanel.tsx` | إضافة قائمة بصرية للأAgents + search + status + badge "Default" |
+  1606→| `client/src/components/SidePanel/Agents/AgentConfig.tsx` | إضافة `DefaultAgentToggle` |
+  1607→| `client/src/components/SidePanel/Agents/ModelPanel.tsx` | استخدام DB providers |
+  1608→| `client/src/utils/buildDefaultConvo.ts` | إزالة `PRIMARY_AGENT_ID` + جلب من DB |
+  1609→| `client/src/utils/getDefaultEndpoint.ts` | إزالة hardcode USER |
+  1610→| `client/src/hooks/useSideNavLinks.ts` | إزالة رابط Marketplace + إضافة رابط "Providers" (مع الإبقاء على Agent Builder) |
+  1611→| `client/src/routes/index.tsx` | إزالة route `/agents` + إضافة route `/providers` |
+  1612→| `client/src/data-provider/Agents/mutations.ts` | إضافة set/unset default mutations |
+  1613→| `client/src/data-provider/Agents/queries.ts` | إضافة `useGetDefaultAgentQuery` + إزالة `useMarketplaceAgentsInfiniteQuery` |
+  1614→| `client/src/store/families.ts` | إضافة `isAgentModeByIndex` atom |
+  1615→| `client/src/utils/roles.ts` | توحيد role checks |
+  1616→| `packages/data-schemas/src/schema/agent.ts` | إضافة `isDefault` و `defaultForRoles` |
+  1617→| `packages/data-schemas/src/methods/agent.ts` | إضافة logging في `updateAgent` |
+  1618→| `api/server/middleware/agents/canAccessAgentFromBody.js` | جلب default agent من DB بدل hardcoded |
+  1619→| `api/server/routes/agents/v1.js` | إضافة routes `/set-default`, `/unset-default`, `/default` |
+  1620→| `api/server/services/Config/EndpointService.js` | دمج DB providers مع YAML |
+  1621→| `config/setup-primary-agent.js` | تحويل لـ seed-once (لا update) |
+  1622→| `client/src/locales/ar/translation.json` | إضافة نصوص جديدة + إزالة مفاتيح Marketplace |
+  1623→| `client/src/locales/en/translation.json` | إضافة نصوص جديدة + إزالة مفاتيح Marketplace |
+  1624→
+  1625→### ملفات محذوفة (13 ملف)
+  1626→
+  1627→| المسار | السبب |
+  1628→|---|---|
+  1629→| `client/src/components/Agents/Marketplace.tsx` | حذف واجهة Marketplace بالكامل |
+  1630→| `client/src/components/Agents/MarketplaceAdminSettings.tsx` | جزء من Marketplace |
+  1631→| `client/src/components/Agents/MarketplaceContext.tsx` | جزء من Marketplace |
+  1632→| `client/src/components/Agents/AgentCard.tsx` | جزء من Marketplace |
+  1633→| `client/src/components/Agents/AgentDetail.tsx` | جزء من Marketplace |
+  1634→| `client/src/components/Agents/AgentDetailContent.tsx` | جزء من Marketplace |
+  1635→| `client/src/components/Agents/AgentGrid.tsx` | جزء من Marketplace |
+  1636→| `client/src/components/Agents/VirtualizedAgentGrid.tsx` | جزء من Marketplace |
+  1637→| `client/src/components/Agents/CategoryTabs.tsx` | جزء من Marketplace |
+  1638→| `client/src/components/Agents/SearchBar.tsx` | جزء من Marketplace |
+  1639→| `client/src/components/Agents/SmartLoader.tsx` | جزء من Marketplace |
+  1640→| `client/src/components/Agents/ErrorDisplay.tsx` | جزء من Marketplace |
+  1641→| `client/src/hooks/useShowMarketplace.ts` | لم يعد له استخدام بعد حذف Marketplace |
+  1642→| `client/src/components/Agents/tests/*` | اختبارات Marketplace (MarketplaceContext.spec, AgentDetail.spec, VirtualizedAgentGrid.test, CategoryTabs.spec, SmartLoader.spec, ErrorDisplay.spec, AgentCard.spec, VirtualScrollingPerformance.test, Accessibility.spec, SearchBar.spec, AgentGrid.integration.spec) |
+  1643→
+  1644→### ملفات تبقى كما هي بدون تغيير
+  1645→
+  1646→- `client/src/components/Agents/index.ts` — يتم تنظيفه فقط (إزالة exports الخاصة بالمكونات المحذوفة).
+  1647→- `client/src/components/Agents/tests/MarketplaceContext.spec.tsx` وغيره من اختبارات Marketplace — تُحذف مع المكونات.
+  1648→- كل ملفات `AgentPanel`, `AgentConfig`, `ModelPanel`, `AdvancedPanel`, `AgentFooter`, `AgentSelect`, `AgentCategorySelector`, `DeleteButton` في Side Panel — **تبقى كما هي** مع التحسينات المذكورة فقط.
+  1649→
+  1650→---
+  1651→
+  1652→## خاتمة
+  1653→
+  1654→هذا التقرير يقدم تحليلاً شاملاً للآلية الحالية في منصة Ai Norx حول إدارة الـ Agents والمحادثات، ويحدد 11 مشكلة ملموسة مع مواقعها في الكود، ويقدم خطة إصلاح متكاملة على 5 مراحل بأولويات واضحة (P0 → P4) وتقديرات زمنية ومخاطر واعتبارات rollback.
+  1655→
+  1656→**التعديل الجوهري في هذه النسخة:** تم اعتماد قرار **حذف Marketplace بالكامل** بدلاً من إعادة هيكلته، وتعزيز Agent Builder في Side Panel ليصبح نقطة الإدارة الوحيدة للأAgents. هذا يقلل حجم الكود ويبسط الـ mental model، ويتجنب نقل المكونات بين الأماكن.
+  1657→
+  1658→**الخطوة الأولى الموصى بها:** تنفيذ الأولوية P0 (إصلاح `setup-primary-agent.js` + logging) فوراً — لأنها تحمي تعديلات الـ Admin الحالية من الفقدان عند كل deploy.
+  1659→
+  1660→**الخطوة الثانية:** تنفيذ الأولوية P1 (إضافة `isDefault` schema + endpoints + UI toggle) — لأنها أساس الميزة الجديدة.
+  1661→
+  1662→**الخطوة الثالثة:** تنفيذ الأولوية P2 (ModeSwitcher + حذف Marketplace + تعزيز Agent Builder) — تحسين تجربة المستخدم.
+  1663→
+  1664→**الخطوة الرابعة:** تنفيذ الأولوية P3 (Providers UI) — ميزة المزودين الديناميكيين.
+  1665→
+  1666→**الخطوة الخامسة:** تنفيذ الأولوية P4 (تنظيف + اختبارات + ترجمات) — استقرار طويل المدى.
+  1667→
+  1668→---
+  1669→
+  1670→## 12. ملحق: مراجعة آخر تحديث (commit `18c2036`)
+  1671→
+  1672→> **التاريخ:** 2026-06-25
+  1673→> **Commit:** `18c2036 fix: OpenCodez 8s timeout + NVIDIA fallback + Workspace panel + session popup`
+  1674→> **الملفات المتأثرة:** `client/src/components/Chat/Header.tsx` (+191/-57) و `api/server/index.js` (+50/-7)
+  1675→
+  1676→### 12.1 ملخص التغييرات في `Header.tsx`
+  1677→
+  1678→#### (أ) إضافة مكون جديد `SandboxSessionCheck` (الأسطر 17–127)
+  1679→- **الوظيفة:** popup شامل الشاشة يظهر عند فتح محادثة جديدة ووجود sandbox نشط من محادثة سابقة.
+  1680→- **الخيارات:** "متابعة باستخدام الـ sandbox الحالي" أو "إنهاء وبدء جديد".
+  1681→- **السبب:** الباقة المجانية من Tensorlake تسمح بـ sandbox واحد فقط.
+  1682→- **الـ API endpoints المستخدمة:**
+  1683→  - `GET /api/sandbox/status` — فحص حالة الـ sandbox
+  1684→  - `POST /api/sandbox/terminate` — إنهاء الـ sandbox
+  1685→- **السلوك:** يظهر بعد 1.5 ثانية من تحميل الصفحة، يتجاهل تلقائياً بعد الاختيار (state `dismissed`).
+  1686→
+  1687→#### (ب) تحسين مكون `WorkspaceButton` (الأسطر 129–287)
+  1688→- **إضافات جديدة:**
+  1689→  - `error` state + رسالة خطأ عند فشل التحميل
+  1690→  - `sandboxId` state + عرض الـ ID في الـ panel
+  1691→  - `autoRefresh` state + auto-refresh كل 5 ثوانٍ
+  1692→  - `formatSize(bytes)` helper لتنسيق أحجام الملفات (B/KB/MB)
+  1693→  - `getFileIcon(type)` helper لأيقونات الملفات (🖼️📊📋🌐📄📝📕📁)
+  1694→  - badge عدّاد على الأيقونة يُظهر عدد الملفات
+  1695→  - click-outside overlay لإغلاق الـ panel
+  1696→  - عرض المسار `/home/tl-user/` في أسفل الـ panel
+  1697→- **الـ API endpoint:** `GET /api/sandbox/files` (تم تحديثه ليشمل `sandboxId` و `type`)
+  1698→
+  1699→#### (ج) منطق التفرع بين ADMIN و USER — **لم يتغير**
+  1700→الأسطر 333–340 لا تزال كما هي:
+  1701→```tsx
+  1702→{isAdmin ? (
+  1703→  <ModelSelector startupConfig={startupConfig} />
+  1704→) : (
+  1705→  <div className="flex items-center gap-2 rounded-lg border ...">
+  1706→    <Bot className="h-4 w-4" />
+  1707→    <span>Ai Norx</span>
+  1708→  </div>
+  1709→)}
+  1710→```
+  1711→هذا يعني أن **المشكلة 1 و 2 في التقرير لا تزال قائمة** — والمرحلة 1 من الخطة لا تزال ضرورية وصالحة.
+  1712→
+  1713→### 12.2 ملخص التغييرات في `api/server/index.js`
+  1714→
+  1715→#### (أ) إضافة NVIDIA fallback helper function (الأسطر 245–261)
+  1716→```js
+  1717→async function callNvidiaFallback(req, res, isStreamRequest) {
+  1718→  var nvModel = 'meta/llama-3.3-70b-instruct';
+  1719→  var ocModel = (req.body.model || '');
+  1720→  if (ocModel.includes('deepseek')) nvModel = 'deepseek-ai/deepseek-r1';
+  1721→  else if (ocModel.includes('nemotron')) nvModel = 'nvidia/llama-3.1-nemotron-70b-instruct';
+  1722→  // ... fetch NVIDIA API with 30s timeout
+  1723→}
+  1724→```
+  1725→
+  1726→#### (ب) إضافة 8s timeout على طلبات OpenCodez (السطر 308)
+  1727→```js
+  1728→signal: AbortSignal.timeout(8000),
+  1729→```
+  1730→- إذا لم يستجب OpenCodez خلال 8 ثوانٍ، يتم الانتقال تلقائياً إلى NVIDIA fallback.
+  1731→- منطق fallback مُعاد استخدامه في حالتين: timeout في الـ fetch (السطر 313) و HTTP status >= 429 (السطر 322).
+  1732→
+  1733→### 12.3 التحقق من التوافق مع الخطة
+  1734→
+  1735→| المرحلة | التوافق | التعديل المطلوب |
+  1736→|---|---|---|
+  1737→| **المرحلة 1** (ModeSwitcher) | ✅ متوافق | إضافة محاذير الحفاظ على `SandboxSessionCheck` و `WorkspaceButton` (تم في القسم 1.2) |
+  1738→| **المرحلة 2** (حذف Marketplace) | ✅ متوافق | لا تأثير — التغييرات في ملفات الـ Header، لا ملفات Marketplace |
+  1739→| **المرحلة 3** (isDefault) | ✅ متوافق | لا تأثير — التغييرات في API server و sandbox، لا schema الـ Agent |
+  1740→| **المرحلة 4** (Providers UI) | ⚠️ يحتاج انتباه | NVIDIA fallback الحالي مكتوب خصيصاً لـ OpenCodez — يجب تعميمه عند إضافة مزودين جدد (انظر 12.4) |
+  1741→| **المرحلة 5** (إصلاح setup-primary-agent) | ✅ متوافق | لا تأثير |
+  1742→
+  1743→### 12.4 تأثير NVIDIA fallback على المرحلة 4 (Providers UI)
+  1744→
+  1745→**المشكلة:** منطق NVIDIA fallback في `api/server/index.js` مكتوب بشكل hardcoded داخل الـ OpenCodez proxy handler. عند إضافة مزودين جدد عبر DB (المرحلة 4)، سيحتاج كل مزود لمنطق fallback مشابه.
+  1746→
+  1747→**الحلول المقترحة (إضافة للمرحلة 4):**
+  1748→
+  1749→1. **الحل أ (موصى به — قصير المدى):** إبقاء NVIDIA fallback كما هو لـ OpenCodez فقط، وإضافة حقل `fallbackProviderId` في مخطط Provider لتحديد المزود البديل لكل مزود جديد.
+  1750→
+  1751→2. **الحل ب (بعيد المدى):** استخراج منطق NVIDIA fallback إلى middleware مستقل `providerFallbackMiddleware` يُستخدم لكل المزودين، مع قاعدة تحديد الموديل المكافئ (NVIDIA model) لكل موديل مزود.
+  1752→
+  1753→**التعديل المطلوب إضافته في مخطط Provider (المرحلة 4.1):**
+  1754→```ts
+  1755→// إضافة حقول fallback للمزود
+  1756→fallbackProviderId: { type: String, default: 'nvidia' }, // معرّف المزود البديل
+  1757→fallbackModelMapping: {
+  1758→  type: Map,
+  1759→  of: String,
+  1760→  default: new Map([
+  1761→    ['deepseek', 'deepseek-ai/deepseek-r1'],
+  1762→    ['nemotron', 'nvidia/llama-3.1-nemotron-70b-instruct'],
+  1763→    ['default', 'meta/llama-3.3-70b-instruct'],
+  1764→  ]),
+  1765→},
+  1766→timeoutMs: { type: Number, default: 8000 }, // مهلة افتراضية لكل مزود
+  1767→```
+  1768→
+  1769→### 12.5 إضافة مهام جديدة للأولوية P4
+  1770→
+  1771→| # | المهمة | الملفات المتأثرة | التقدير |
+  1772→|---|---|---|---|
+  1773→| 29 | اختبار `SandboxSessionCheck` مع `ModeSwitcher` — التأكد من ظهور الـ popup في كلا الوضعين (Agent Mode و Chat) | `client/src/components/Chat/Header.tsx` | 30 دقيقة |
+  1774→| 30 | اختبار `WorkspaceButton` مع `ModeSwitcher` — التأكد من عمل auto-refresh وعرض الملفات في كلا الوضعين | `client/src/components/Chat/Header.tsx` | 30 دقيقة |
+  1775→| 31 | تعميم NVIDIA fallback لكل المزودين (إذا تم اختيار الحل ب في 12.4) | `api/server/index.js` + `api/server/middleware/providerFallback.js` (جديد) | 2 ساعة |
+  1776→
+  1777→### 12.6 خلاصة المراجعة
+  1778→
+  1779→**النتيجة:** آخر تحديث (commit `18c2036`) **لا يتعارض جوهرياً** مع خطة الإصلاح المتكاملة. التغييرات تركز على:
+  1780→
+  1781→1. **تحسين تجربة المستخدم مع sandbox** (popup + workspace panel) — مكملة للخطة، وليست بديلاً عنها.
+  1782→2. **تحسين موثوقية OpenCodez proxy** (timeout + NVIDIA fallback) — لا علاقة لها بـ Agent management، لكنها تحتاج تعميم في المرحلة 4.
+  1783→
+  1784→**التعديلات المطبقة على الخطة بعد المراجعة:**
+  1785→
+  1786→- ✅ إضافة محاذير الحفاظ على `SandboxSessionCheck` و `WorkspaceButton` في القسم 1.2.
+  1787→- ✅ إضافة قسم 12.4 (تأثير NVIDIA fallback على المرحلة 4) مع حلول مقترحة.
+  1788→- ✅ إضافة 3 مهام جديدة في القسم 12.5 (اختبارات + تعميم fallback).
+  1789→- ✅ تحديث الفهرس لإضافة القسم 12.
+  1790→- ❌ لا حاجة لتعديل أي مرحلة أخرى أو أولوية أخرى — كل المراحل من P0 إلى P4 لا تزال صالحة كما هي.
+  1791→
+  1792→**التقدير الزمني الإجمالي بعد المراجعة:** ~24 ساعة (بدلاً من 22) — إضافة ساعتين للمهام الجديدة (اختبارات + تعميم fallback).
+  1793→
