@@ -236,68 +236,72 @@ const startServer = async () => {
   app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
   /* API Endpoints */
 
-  // ── OpenCodez Proxy ───────────────────────────────────────────────────
-  // OpenCodez API doesn't need an API key, but LibreChat's OpenAI SDK
-  // always sends Authorization: Bearer. This proxy strips it.
-  // Also properly streams SSE responses without buffering (fixes UI freeze).
+  // ── OpenCodez Proxy with NVIDIA Fallback ───────────────────────────────
   app.use('/api/opencodez', async (req, res) => {
     const targetUrl = `https://opencode.ai/zen${req.url}`;
     console.log(`[OpenCodez Proxy] ${req.method} ${req.url} → ${targetUrl}`);
+    const isStreamRequest = req.body?.stream === true;
 
-    try {
-      // Check if the request body has stream:true — force SSE response
-      const bodyStr = req.body ? JSON.stringify(req.body) : '';
-      const isStreamRequest = req.body?.stream === true || bodyStr.includes('"stream":true');
-
-      const fetchOptions = {
-        method: req.method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': isStreamRequest ? 'text/event-stream' : 'application/json',
-        },
-      };
-
-      if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
-        fetchOptions.body = JSON.stringify(req.body);
-      }
-
-      const proxyResponse = await fetch(targetUrl, fetchOptions);
+    async function streamResponse(proxyResponse) {
       const contentType = proxyResponse.headers.get('content-type') || '';
-      console.log(`[OpenCodez Proxy] Response: ${proxyResponse.status} ${contentType}`);
-
       res.status(proxyResponse.status);
-
-      // For streaming responses, set proper headers and flush immediately
       if (contentType.includes('text/event-stream') || isStreamRequest) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
-        res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+        res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders();
-
         const reader = proxyResponse.body.getReader();
         const decoder = new TextDecoder();
         try {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            res.write(chunk);
-            // Flush immediately — don't buffer
-            if (typeof res.flush === 'function') {
-              res.flush();
-            }
+            res.write(decoder.decode(value, { stream: true }));
+            if (typeof res.flush === 'function') { res.flush(); }
           }
         } catch (e) {
-          console.log('[OpenCodez Proxy] Stream ended (client disconnect)');
+          console.log('[OpenCodez Proxy] Stream ended');
         }
         res.end();
       } else {
-        // Non-streaming: return full response
         res.setHeader('Content-Type', contentType);
-        const text = await proxyResponse.text();
-        res.send(text);
+        res.send(await proxyResponse.text());
       }
+    }
+
+    try {
+      const fetchOptions = {
+        method: req.method,
+        headers: { 'Content-Type': 'application/json', 'Accept': isStreamRequest ? 'text/event-stream' : 'application/json' },
+      };
+      if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+        fetchOptions.body = JSON.stringify(req.body);
+      }
+
+      const proxyResponse = await fetch(targetUrl, fetchOptions);
+      console.log(`[OpenCodez Proxy] Response: ${proxyResponse.status}`);
+
+      // If OpenCodez fails (429/500/502/503), try NVIDIA fallback
+      if (proxyResponse.status >= 429 && process.env.NVIDIA_API_KEY && req.body) {
+        console.log(`[OpenCodez Proxy] Failed (${proxyResponse.status}), falling back to NVIDIA`);
+        await proxyResponse.text().catch(() => {});
+        var nvModel = 'meta/llama-3.3-70b-instruct';
+        var ocModel = (req.body.model || '');
+        if (ocModel.includes('deepseek')) nvModel = 'deepseek-ai/deepseek-r1';
+        else if (ocModel.includes('nemotron')) nvModel = 'nvidia/llama-3.1-nemotron-70b-instruct';
+        var nvBody = JSON.parse(JSON.stringify(req.body));
+        nvBody.model = nvModel;
+        var nvResp = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.NVIDIA_API_KEY, 'Accept': isStreamRequest ? 'text/event-stream' : 'application/json' },
+          body: JSON.stringify(nvBody),
+        });
+        console.log(`[NVIDIA Fallback] Response: ${nvResp.status}`);
+        return await streamResponse(nvResp);
+      }
+
+      await streamResponse(proxyResponse);
     } catch (err) {
       console.error('[OpenCodez Proxy] Error:', err.message);
       if (!res.headersSent) {
@@ -347,6 +351,54 @@ const startServer = async () => {
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
   app.use('/api/rum', routes.rum);
+
+  // ── Sandbox Files API ──────────────────────────────────────────────────
+  app.get('/api/sandbox/files', optionalJwtAuth, async (req, res) => {
+    try {
+      var conversationId = req.query.conversationId;
+      if (!conversationId) {
+        return res.json({ files: [] });
+      }
+      // Lazy require to avoid circular deps at startup
+      var TLMod;
+      try {
+        TLMod = require('./app/clients/tools/structured/TensorlakeCodeInterpreter');
+      } catch (e) {
+        return res.json({ files: [], error: 'sandbox module not available' });
+      }
+      var cache = TLMod._sandboxCache || TLMod.sandboxCache;
+      if (!cache) {
+        return res.json({ files: [] });
+      }
+      var cached = cache.get(conversationId);
+      if (!cached) {
+        return res.json({ files: [], message: 'No sandbox for this conversation' });
+      }
+      var sandbox = cached.sandbox;
+      var dirListing = await sandbox.listDirectory('/home/tl-user');
+      var entries = dirListing.entries || dirListing.files || [];
+      if (!Array.isArray(entries)) {
+        return res.json({ files: [] });
+      }
+      var files = entries
+        .filter(function (e) {
+          var name = e.name || e.filename || '';
+          return !name.startsWith('_exec_') && !name.startsWith('.');
+        })
+        .map(function (e) {
+          var name = e.name || e.filename || '';
+          return {
+            name: name,
+            size: e.size || 0,
+            type: name.split('.').pop() ? name.split('.').pop().toLowerCase() : '',
+          };
+        });
+      res.json({ files: files, sandboxId: cached.sandboxId });
+    } catch (err) {
+      console.error('[Sandbox Files API] Error:', err.message);
+      res.status(500).json({ error: 'Failed to list files', message: err.message });
+    }
+  });
 
   app.use('/metrics', metricsRouter);
 

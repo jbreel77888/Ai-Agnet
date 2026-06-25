@@ -261,3 +261,5 @@ class TensorlakeCodeInterpreter extends Tool {
 }
 
 module.exports = TensorlakeCodeInterpreter;
+module.exports._sandboxCache = null; // Will be set by instances
+module.exports.sandboxCache = null;
